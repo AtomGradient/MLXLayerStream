@@ -1,0 +1,69 @@
+[
+  {
+    "model": "Qwen3.5-4B-4bit",
+    "max_tokens": 50,
+    "configs": [
+      {
+        "mode": "full_resident",
+        "resident_layers": "all",
+        "gen_tps": 150.8521640236632,
+        "prompt_tps": 183.3264585459042,
+        "peak_mem_gb": 2.337730685248971,
+        "streaming_overhead_pct": 0.0
+      },
+      {
+        "mode": "stream_0pct",
+        "resident_layers": 0,
+        "resident_pct": 0.0,
+        "streamed_layers": 32,
+        "gen_tps": 3.769176356065791,
+        "peak_mem_gb": 0.46844335459172726,
+        "streaming_overhead_pct": 78.82285034638204,
+        "avg_load_ms": 5.965838698975858,
+        "avg_unload_ms": 0.5693133889872115,
+        "total_io_s": 10.456243340740912,
+        "total_decode_s": 13.265497625106946
+      },
+      {
+        "mode": "hybrid_25pct_first_n",
+        "resident_layers": 8,
+        "resident_pct": 25.0,
+        "streamed_layers": 24,
+        "gen_tps": 4.957017412525833,
+        "peak_mem_gb": 0.9344979394227266,
+        "streaming_overhead_pct": 76.74907753919642,
+        "avg_load_ms": 5.939843742429123,
+        "avg_unload_ms": 0.5113706969617245,
+        "total_io_s": 7.741457327269018,
+        "total_decode_s": 10.086710584000684
+      },
+      {
+        "mode": "hybrid_50pct_first_n",
+        "resident_layers": 16,
+        "resident_pct": 50.0,
+        "streamed_layers": 16,
+        "gen_tps": 6.944023021336186,
+        "peak_mem_gb": 1.4005471747368574,
+        "streaming_overhead_pct": 73.2138851701314,
+        "avg_load_ms": 6.03039407855249,
+        "avg_unload_ms": 0.5592554791655857,
+        "total_io_s": 5.271719646174461,
+        "total_decode_s": 7.200436957995407
+      },
+      {
+        "mode": "hybrid_75pct_first_n",
+        "resident_layers": 24,
+        "resident_pct": 75.0,
+        "streamed_layers": 8,
+        "gen_tps": 12.166509635362104,
+        "peak_mem_gb": 1.8665964100509882,
+        "streaming_overhead_pct": 64.21679911091243,
+        "avg_load_ms": 6.048481687903404,
+        "avg_unload_ms": 0.5492198135470971,
+        "total_io_s": 2.6390806005802006,
+        "total_decode_s": 4.109642082941718
+      }
+    ],
+    "num_layers": 32
+  }
+]
