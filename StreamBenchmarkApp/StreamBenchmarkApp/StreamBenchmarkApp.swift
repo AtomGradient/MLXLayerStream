@@ -5,6 +5,16 @@ import MLXLLM
 import MLXLMCommon
 import Tokenizers
 
+// MARK: - Logging
+
+/// Thread-safe log to benchmark_results.txt for device debugging
+func streamLog(_ msg: String) {
+    let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let logFile = docsURL.appendingPathComponent("benchmark_results.txt")
+    let current = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+    try? (current + msg + "\n").write(to: logFile, atomically: true, encoding: .utf8)
+}
+
 // MARK: - Configuration
 
 let kPrompt = "Write a detailed explanation of how neural networks learn through backpropagation."
@@ -42,6 +52,7 @@ class BenchmarkViewModel: ObservableObject {
 
     func loadModel() async {
         isRunning = true
+        streamLog("=== loadModel START ===")
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let localModelURL = docsURL.appendingPathComponent("model")
 
@@ -98,48 +109,62 @@ class BenchmarkViewModel: ObservableObject {
     }
 
     private func loadStreamingModel(directory: URL) async throws {
-        // Create temp dir with only non_layer.safetensors (as model.safetensors) + configs
+        streamLog("=== Streaming Load Log ===")
+        streamLog("Step 1: Creating temp directory...")
+
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("stream_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         let fm = FileManager.default
+        var linkedFiles: [String] = []
         for item in try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
             let name = item.lastPathComponent
             if name == "non_layer.safetensors" {
                 try fm.createSymbolicLink(
                     at: tempDir.appendingPathComponent("model.safetensors"),
                     withDestinationURL: item)
+                linkedFiles.append("model.safetensors -> \(name)")
             } else if name.hasSuffix(".json") && !name.hasPrefix("layer_") && name != "streaming_info.json" {
                 try fm.createSymbolicLink(
                     at: tempDir.appendingPathComponent(name),
                     withDestinationURL: item)
+                linkedFiles.append(name)
             }
         }
+        streamLog("Step 2: Temp dir created with \(linkedFiles.count) files: \(linkedFiles.joined(separator: ", "))")
 
-        // Load model from temp dir (only non-layer weights)
+        streamLog("Step 3: Calling loadContainer...")
+        let memBefore = GPU.activeMemory
         let tempContainer = try await LLMModelFactory.shared.loadContainer(
             configuration: ModelConfiguration(directory: tempDir)
         )
+        let memAfter = GPU.activeMemory
+        streamLog("Step 4: loadContainer OK! Memory: \(memBefore/1024/1024)MB -> \(memAfter/1024/1024)MB")
 
-        // Read streaming info
         let infoData = try Data(contentsOf: directory.appendingPathComponent("streaming_info.json"))
         let info = try JSONSerialization.jsonObject(with: infoData) as! [String: Any]
         let numLayers = info["num_layers"] as! Int
+        streamLog("Step 5: streaming_info loaded. numLayers=\(numLayers)")
 
-        // Extract model and tokenizer from container
-        // Note: we use the deprecated perform that gives us direct model/tokenizer access
+        streamLog("Step 6: Extracting model from container...")
         let (engine, tokenizer): (StreamingEngine, any Tokenizer) = try await tempContainer.perform { context in
+            let modelType = String(describing: type(of: context.model))
+            streamLog("Step 6a: Model type = \(modelType)")
+
             guard let qwenModel = context.model as? Qwen35TextModel else {
-                throw StreamingError.unsupportedModel("Not a Qwen35TextModel")
+                streamLog("Step 6b: CAST FAILED - not Qwen35TextModel")
+                throw StreamingError.unsupportedModel("Got \(modelType), expected Qwen35TextModel")
             }
 
+            streamLog("Step 6c: Cast OK, creating engine...")
             let engine = StreamingEngine(
                 modelDir: directory,
                 numLayers: numLayers,
                 module: qwenModel,
                 qwen35Model: qwenModel
             )
+            streamLog("Step 7: Engine created!")
             return (engine, context.tokenizer)
         }
 
@@ -147,6 +172,8 @@ class BenchmarkViewModel: ObservableObject {
         self.streamingTokenizer = tokenizer
 
         try? fm.removeItem(at: tempDir)
+        streamLog("Step 8: Streaming model loaded successfully!")
+        streamLog("=== END ===")
     }
 
     // MARK: - Benchmark Modes
@@ -433,7 +460,9 @@ struct ContentView: View {
             .navigationTitle("Stream Benchmark")
         }
         .task {
+            streamLog("=== APP TASK STARTED ===")
             try? await Task.sleep(nanoseconds: 1_000_000_000)
+            streamLog("=== AFTER 1s DELAY ===")
             if !vm.modelLoaded && !vm.isRunning {
                 await vm.loadModel()
                 if vm.modelLoaded {
