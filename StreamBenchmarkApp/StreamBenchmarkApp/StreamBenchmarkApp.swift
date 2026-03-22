@@ -69,7 +69,6 @@ class BenchmarkViewModel: ObservableObject {
         let loadStart = CFAbsoluteTimeGetCurrent()
 
         if isStreaming {
-            // Streaming mode: load only non-layer weights
             do {
                 try await loadStreamingModel(directory: localModelURL)
                 loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart
@@ -78,10 +77,10 @@ class BenchmarkViewModel: ObservableObject {
                 status = "Streaming: \(modelName) (\(String(format: "%.0f", loadMemMB)) MB resident)"
                 modelLoaded = true
             } catch {
-                status = "Streaming load failed: \(error.localizedDescription)"
+                status = "Streaming load failed: \(error)"
+                saveError("Streaming load failed: \(error)")
             }
         } else {
-            // Normal mode: load all weights
             do {
                 container = try await LLMModelFactory.shared.loadContainer(
                     configuration: ModelConfiguration(directory: localModelURL)
@@ -91,7 +90,8 @@ class BenchmarkViewModel: ObservableObject {
                 status = "Loaded \(modelName) (\(String(format: "%.0f", loadMemMB)) MB)"
                 modelLoaded = true
             } catch {
-                status = "Load failed: \(error.localizedDescription)"
+                status = "Load failed: \(error)"
+                saveError("Load failed: \(error)")
             }
         }
         isRunning = false
@@ -130,8 +130,8 @@ class BenchmarkViewModel: ObservableObject {
         // Extract model and tokenizer from container
         // Note: we use the deprecated perform that gives us direct model/tokenizer access
         let (engine, tokenizer): (StreamingEngine, any Tokenizer) = try await tempContainer.perform { context in
-            guard let qwenModel = context.model as? Qwen35Model else {
-                throw StreamingError.unsupportedModel("Not a Qwen35Model")
+            guard let qwenModel = context.model as? Qwen35TextModel else {
+                throw StreamingError.unsupportedModel("Not a Qwen35TextModel")
             }
 
             let engine = StreamingEngine(
@@ -310,6 +310,20 @@ class BenchmarkViewModel: ObservableObject {
     private func saveResults() {
         let text = resultsSummary
         guard !text.isEmpty else { return }
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let fileURL = docsURL.appendingPathComponent("benchmark_results.txt")
+        try? text.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Write error to results file so the automation script can capture it.
+    private func saveError(_ message: String) {
+        let text = """
+        === MLX Layer-Stream Device Benchmark ===
+        Model: \(modelName)
+        Device: \(deviceInfo())
+        ERROR: \(message)
+        === END ===
+        """
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let fileURL = docsURL.appendingPathComponent("benchmark_results.txt")
         try? text.write(to: fileURL, atomically: true, encoding: .utf8)

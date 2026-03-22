@@ -50,16 +50,24 @@ def split_model(model_path, output_dir):
         all_weights.update(mx.load(wf))
     print(f"Total tensors: {len(all_weights)}")
 
-    # Group by layer
+    # Group by layer, exclude vision_tower weights
     layer_weights = defaultdict(dict)
     non_layer_weights = {}
+    skipped = 0
 
     for k, v in all_weights.items():
+        # Skip vision tower weights (multimodal models)
+        if k.startswith("vision_tower") or k.startswith("model.visual"):
+            skipped += 1
+            continue
         m = re.search(r"layers\.(\d+)\.", k)
         if m:
             layer_weights[int(m.group(1))][k] = v
         else:
             non_layer_weights[k] = v
+
+    if skipped:
+        print(f"Skipped {skipped} vision_tower tensors")
 
     num_layers = max(layer_weights.keys()) + 1 if layer_weights else 0
     print(f"Layers: {num_layers}")
@@ -83,11 +91,11 @@ def split_model(model_path, output_dir):
         if i % 8 == 0 or i == num_layers - 1:
             print(f"  Layer {i}: {size / (1024**2):.0f} MB ({len(layer_weights[i])} tensors)")
 
-    # Copy config and tokenizer files
+    # Copy config and tokenizer files (exclude index files that reference original weights)
     for pattern in ["config.json", "configuration.json", "tokenizer*.json",
                      "preprocessor_config.json", "processor_config.json",
                      "vocab.json", "merges.txt", "special_tokens_map.json",
-                     "video_preprocessor_config.json"]:
+                     "generation_config.json"]:
         for f in glob.glob(os.path.join(model_path, pattern)):
             dst = os.path.join(output_dir, os.path.basename(f))
             shutil.copy2(f, dst)

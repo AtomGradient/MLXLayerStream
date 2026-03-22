@@ -15,12 +15,12 @@ class StreamingEngine {
     let modelDir: URL
     let numLayers: Int
     private let module: Module
-    private let qwen35Model: Qwen35Model
+    private let qwen35Model: Qwen35TextModel
 
     var layerLoadTimes: [Double] = []
     var layerUnloadTimes: [Double] = []
 
-    init(modelDir: URL, numLayers: Int, module: Module, qwen35Model: Qwen35Model) {
+    init(modelDir: URL, numLayers: Int, module: Module, qwen35Model: Qwen35TextModel) {
         self.modelDir = modelDir
         self.numLayers = numLayers
         self.module = module
