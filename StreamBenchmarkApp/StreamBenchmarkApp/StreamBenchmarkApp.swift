@@ -73,7 +73,7 @@ class BenchmarkViewModel: ObservableObject {
 
         if isStreaming {
             do {
-                let (model, numLayers) = try StreamingEngine.createStreamingModel(directory: localModelURL)
+                let (model, numLayers) = try await StreamingEngine.createStreamingModel(directory: localModelURL)
                 streamingEngine = StreamingEngine(modelDir: localModelURL, numLayers: numLayers, model: model)
                 isStreamingMode = true
                 loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart

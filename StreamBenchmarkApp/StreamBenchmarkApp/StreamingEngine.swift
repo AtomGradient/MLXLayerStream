@@ -32,7 +32,7 @@ class StreamingEngine {
     /// 2. Placeholder-quantize all Linear modules (tiny arrays, no real computation)
     /// 3. Load non_layer.safetensors weights
     /// 4. Layer weights loaded on-demand during streamingForward()
-    static func createStreamingModel(directory: URL) throws -> (Qwen35TextModel, Int) {
+    static func createStreamingModel(directory: URL) async throws -> (Qwen35TextModel, Int) {
         // Read config
         let configData = try Data(contentsOf: directory.appendingPathComponent("config.json"))
         let decoder = JSONDecoder()
@@ -51,12 +51,9 @@ class StreamingEngine {
         let bits = qConfig?.quantization?.bits ?? 4
 
         // Create model via LLM type registry
-        let baseDecoder = JSONDecoder()
-        let baseConfig = try baseDecoder.decode(BaseConfiguration.self, from: configData)
-        let langModel = try waitForAsync {
-            try await LLMModelFactory.shared.typeRegistry.createModel(
-                configuration: configData, modelType: baseConfig.modelType)
-        }
+        let baseConfig = try JSONDecoder().decode(BaseConfiguration.self, from: configData)
+        let langModel = try await LLMModelFactory.shared.typeRegistry.createModel(
+            configuration: configData, modelType: baseConfig.modelType)
 
         guard let qwenModel = langModel as? Qwen35TextModel else {
             throw StreamingError.unsupportedModel("Expected Qwen35TextModel, got \(type(of: langModel))")
@@ -182,16 +179,3 @@ enum StreamingError: Error, LocalizedError {
     }
 }
 
-// MARK: - Sync async helper
-
-private func waitForAsync<T>(_ block: @escaping () async throws -> T) throws -> T {
-    let semaphore = DispatchSemaphore(value: 0)
-    nonisolated(unsafe) var result: Result<T, Error>!
-    Task.detached {
-        do { result = .success(try await block()) }
-        catch { result = .failure(error) }
-        semaphore.signal()
-    }
-    semaphore.wait()
-    return try result.get()
-}
