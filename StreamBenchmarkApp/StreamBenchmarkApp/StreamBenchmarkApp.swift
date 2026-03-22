@@ -1,7 +1,9 @@
 import SwiftUI
 import MLX
+import MLXNN
 import MLXLLM
 import MLXLMCommon
+import Tokenizers
 
 // MARK: - Configuration
 
@@ -19,7 +21,7 @@ struct BenchmarkResult: Identifiable {
     let tokenCount: Int
     let peakMemoryMB: Double
     let loadTimeSeconds: Double
-    let outputPreview: String
+    let extraInfo: String  // streaming stats, etc.
 }
 
 // MARK: - ViewModel
@@ -32,8 +34,11 @@ class BenchmarkViewModel: ObservableObject {
     @Published var modelLoaded = false
 
     private var container: ModelContainer?
+    private var streamingEngine: StreamingEngine?
+    private var streamingTokenizer: (any Tokenizer)?
     private var modelName: String = "unknown"
     private var loadTimeSeconds: Double = 0
+    private var isStreamingMode = false
 
     func loadModel() async {
         isRunning = true
@@ -53,33 +58,107 @@ class BenchmarkViewModel: ObservableObject {
             return
         }
 
-        status = "Loading \(modelName)..."
+        // Check if this is a streaming model (has streaming_info.json)
+        let isStreaming = FileManager.default.fileExists(
+            atPath: localModelURL.appendingPathComponent("streaming_info.json").path)
 
-        // Measure load time
+        status = "Loading \(modelName)\(isStreaming ? " (streaming)" : "")..."
+
         GPU.clearCache()
         GPU.resetPeakMemory()
         let loadStart = CFAbsoluteTimeGetCurrent()
 
-        do {
-            container = try await LLMModelFactory.shared.loadContainer(
-                configuration: ModelConfiguration(directory: localModelURL)
-            )
-            loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart
-            let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
-            status = "Loaded \(modelName) in \(String(format: "%.1f", loadTimeSeconds))s (\(String(format: "%.0f", loadMemMB)) MB)"
-            modelLoaded = true
-        } catch {
-            status = "Load failed: \(error.localizedDescription)"
+        if isStreaming {
+            // Streaming mode: load only non-layer weights
+            do {
+                try await loadStreamingModel(directory: localModelURL)
+                loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart
+                let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
+                isStreamingMode = true
+                status = "Streaming: \(modelName) (\(String(format: "%.0f", loadMemMB)) MB resident)"
+                modelLoaded = true
+            } catch {
+                status = "Streaming load failed: \(error.localizedDescription)"
+            }
+        } else {
+            // Normal mode: load all weights
+            do {
+                container = try await LLMModelFactory.shared.loadContainer(
+                    configuration: ModelConfiguration(directory: localModelURL)
+                )
+                loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart
+                let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
+                status = "Loaded \(modelName) (\(String(format: "%.0f", loadMemMB)) MB)"
+                modelLoaded = true
+            } catch {
+                status = "Load failed: \(error.localizedDescription)"
+            }
         }
         isRunning = false
     }
 
-    private func runSingle(container: ModelContainer, params: GenerateParameters) async throws -> (genTPS: Double, promptTPS: Double, tokens: Int, peakMB: Double, output: String) {
+    private func loadStreamingModel(directory: URL) async throws {
+        // Create temp dir with only non_layer.safetensors (as model.safetensors) + configs
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stream_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let fm = FileManager.default
+        for item in try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            let name = item.lastPathComponent
+            if name == "non_layer.safetensors" {
+                try fm.createSymbolicLink(
+                    at: tempDir.appendingPathComponent("model.safetensors"),
+                    withDestinationURL: item)
+            } else if name.hasSuffix(".json") && !name.hasPrefix("layer_") && name != "streaming_info.json" {
+                try fm.createSymbolicLink(
+                    at: tempDir.appendingPathComponent(name),
+                    withDestinationURL: item)
+            }
+        }
+
+        // Load model from temp dir (only non-layer weights)
+        let tempContainer = try await LLMModelFactory.shared.loadContainer(
+            configuration: ModelConfiguration(directory: tempDir)
+        )
+
+        // Read streaming info
+        let infoData = try Data(contentsOf: directory.appendingPathComponent("streaming_info.json"))
+        let info = try JSONSerialization.jsonObject(with: infoData) as! [String: Any]
+        let numLayers = info["num_layers"] as! Int
+
+        // Extract model and tokenizer from container
+        // Note: we use the deprecated perform that gives us direct model/tokenizer access
+        let (engine, tokenizer): (StreamingEngine, any Tokenizer) = try await tempContainer.perform { context in
+            guard let qwenModel = context.model as? Qwen35Model else {
+                throw StreamingError.unsupportedModel("Not a Qwen35Model")
+            }
+
+            let engine = StreamingEngine(
+                modelDir: directory,
+                numLayers: numLayers,
+                module: qwenModel,
+                qwen35Model: qwenModel
+            )
+            return (engine, context.tokenizer)
+        }
+
+        self.streamingEngine = engine
+        self.streamingTokenizer = tokenizer
+
+        try? fm.removeItem(at: tempDir)
+    }
+
+    // MARK: - Benchmark Modes
+
+    private func runBaselineSingle() async throws -> (genTPS: Double, promptTPS: Double, tokens: Int, peakMB: Double, output: String) {
+        guard let container else { throw StreamingError.loadFailed("No container") }
+
         GPU.clearCache()
         GPU.resetPeakMemory()
 
         let input = try await container.prepare(input: .init(prompt: kPrompt))
-        let stream = try await container.generate(input: input, parameters: params)
+        let stream = try await container.generate(input: input, parameters: GenerateParameters(maxTokens: kMaxTokens, temperature: 0.0))
 
         var text = ""
         var info: GenerateCompletionInfo?
@@ -94,31 +173,82 @@ class BenchmarkViewModel: ObservableObject {
         return (info!.tokensPerSecond, info!.promptTokensPerSecond, info!.generationTokenCount, peakMB, String(text.prefix(120)))
     }
 
+    private func runStreamingSingle() async throws -> (genTPS: Double, tokens: Int, peakMB: Double, avgLoadMs: Double, avgUnloadMs: Double, ioPct: Double) {
+        guard let engine = streamingEngine, let tokenizer = streamingTokenizer else {
+            throw StreamingError.loadFailed("No streaming engine")
+        }
+
+        GPU.clearCache()
+        GPU.resetPeakMemory()
+        engine.resetStats()
+
+        let tokens = tokenizer.encode(text: kPrompt)
+        var inputIds = MLXArray(tokens).reshaped([1, tokens.count])
+
+        // Prefill
+        let cache = engine.newCache()
+        var logits = engine.streamingStep(inputIds, cache: cache)
+        eval(logits)
+
+        // Decode
+        var generated: [Int] = []
+        let decodeStart = CFAbsoluteTimeGetCurrent()
+
+        for _ in 0..<kMaxTokens {
+            let nextToken = MLX.argMax(logits[0..., (-1)..., 0...], axis: -1)
+            eval(nextToken)
+            let tokenId = nextToken.item(Int.self)
+            generated.append(tokenId)
+
+            // Check for EOS
+            if let eosId = tokenizer.eosTokenId, tokenId == eosId { break }
+
+            inputIds = nextToken.reshaped([1, 1])
+            logits = engine.streamingStep(inputIds, cache: cache)
+            eval(logits)
+        }
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - decodeStart
+        let tps = Double(generated.count) / elapsed
+        let peakMB = Double(GPU.peakMemory) / (1024 * 1024)
+        let ioPct = engine.totalIOSeconds / elapsed * 100
+
+        return (tps, generated.count, peakMB, engine.avgLoadMs, engine.avgUnloadMs, ioPct)
+    }
+
     func runBenchmark() async {
-        guard let container else { return }
         isRunning = true
         results = []
 
-        let params = GenerateParameters(maxTokens: kMaxTokens, temperature: 0.0)
-
-        // Cooldown before starting
         status = "Cooling down (\(kCooldownSeconds)s)..."
         try? await Task.sleep(nanoseconds: kCooldownSeconds * 1_000_000_000)
 
-        status = "Running baseline..."
+        if isStreamingMode {
+            await runStreamingBenchmark()
+        } else {
+            await runBaselineBenchmark()
+        }
+
+        status = "Complete!"
+        isRunning = false
+        saveResults()
+    }
+
+    private func runBaselineBenchmark() async {
         var tpsRuns: [Double] = []
         var lastResult: (genTPS: Double, promptTPS: Double, tokens: Int, peakMB: Double, output: String)?
 
         for run in 1...kNumRuns {
             MLX.eval()
             GPU.clearCache()
-            try? await Task.sleep(nanoseconds: 5_000_000_000)  // 5s cooldown between runs
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
 
+            status = "Baseline run \(run)/\(kNumRuns)..."
             do {
-                let r = try await runSingle(container: container, params: params)
+                let r = try await runBaselineSingle()
                 tpsRuns.append(r.genTPS)
                 lastResult = r
-                status = "Run \(run)/\(kNumRuns): \(String(format: "%.1f", r.genTPS)) TPS"
+                status = "Run \(run): \(String(format: "%.1f", r.genTPS)) TPS"
             } catch {
                 status = "Error: \(error.localizedDescription)"
             }
@@ -128,20 +258,54 @@ class BenchmarkViewModel: ObservableObject {
             let avg = tpsRuns.reduce(0, +) / Double(tpsRuns.count)
             results.append(BenchmarkResult(
                 label: "Baseline",
-                avgTPS: avg,
-                promptTPS: last.promptTPS,
-                allTPS: tpsRuns,
-                tokenCount: last.tokens,
+                avgTPS: avg, promptTPS: last.promptTPS,
+                allTPS: tpsRuns, tokenCount: last.tokens,
                 peakMemoryMB: last.peakMB,
                 loadTimeSeconds: loadTimeSeconds,
-                outputPreview: last.output
+                extraInfo: ""
             ))
         }
-
-        status = "Complete!"
-        isRunning = false
-        saveResults()
     }
+
+    private func runStreamingBenchmark() async {
+        var tpsRuns: [Double] = []
+        var lastLoad = 0.0, lastUnload = 0.0, lastIO = 0.0
+        var lastTokens = 0, lastPeak = 0.0
+
+        for run in 1...kNumRuns {
+            GPU.clearCache()
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+            status = "Streaming run \(run)/\(kNumRuns)..."
+            do {
+                let r = try await runStreamingSingle()
+                tpsRuns.append(r.genTPS)
+                lastLoad = r.avgLoadMs
+                lastUnload = r.avgUnloadMs
+                lastIO = r.ioPct
+                lastTokens = r.tokens
+                lastPeak = r.peakMB
+                status = "Run \(run): \(String(format: "%.1f", r.genTPS)) TPS (I/O: \(String(format: "%.0f", r.ioPct))%)"
+            } catch {
+                status = "Error: \(error.localizedDescription)"
+            }
+        }
+
+        if !tpsRuns.isEmpty {
+            let avg = tpsRuns.reduce(0, +) / Double(tpsRuns.count)
+            results.append(BenchmarkResult(
+                label: "Streaming",
+                avgTPS: avg, promptTPS: 0,
+                allTPS: tpsRuns, tokenCount: lastTokens,
+                peakMemoryMB: lastPeak,
+                loadTimeSeconds: loadTimeSeconds,
+                extraInfo: String(format: "avg_load=%.1fms avg_unload=%.1fms io=%.0f%%",
+                                  lastLoad, lastUnload, lastIO)
+            ))
+        }
+    }
+
+    // MARK: - Results Output
 
     private func saveResults() {
         let text = resultsSummary
@@ -158,6 +322,7 @@ class BenchmarkViewModel: ObservableObject {
         lines.append("Model: \(modelName)")
         lines.append("max_tokens=\(kMaxTokens), runs=\(kNumRuns)")
         lines.append("Device: \(deviceInfo())")
+        lines.append("Mode: \(isStreamingMode ? "STREAMING" : "BASELINE")")
         lines.append("")
         for r in results {
             lines.append("Strategy: \(r.label)")
@@ -167,6 +332,9 @@ class BenchmarkViewModel: ObservableObject {
             lines.append("  Peak Memory: \(String(format: "%.0f", r.peakMemoryMB)) MB")
             lines.append("  Load Time: \(String(format: "%.1f", r.loadTimeSeconds))s")
             lines.append("  Tokens: \(r.tokenCount)")
+            if !r.extraInfo.isEmpty {
+                lines.append("  Streaming: \(r.extraInfo)")
+            }
         }
         lines.append("")
         lines.append("=== END ===")
@@ -179,6 +347,18 @@ class BenchmarkViewModel: ObservableObject {
         #else
         return ProcessInfo.processInfo.hostName
         #endif
+    }
+}
+
+enum StreamingError: Error, LocalizedError {
+    case unsupportedModel(String)
+    case loadFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedModel(let t): return "Unsupported model type: \(t)"
+        case .loadFailed(let msg): return "Load failed: \(msg)"
+        }
     }
 }
 
@@ -220,6 +400,9 @@ struct ContentView: View {
                                     Label(String(format: "%.0f MB", r.peakMemoryMB), systemImage: "memorychip")
                                     Label(String(format: "%.1fs load", r.loadTimeSeconds), systemImage: "clock")
                                 }.font(.caption).foregroundColor(.secondary)
+                                if !r.extraInfo.isEmpty {
+                                    Text(r.extraInfo).font(.caption2).foregroundColor(.secondary)
+                                }
                             }
                             .padding().background(Color.white).cornerRadius(12)
                             .shadow(color: .black.opacity(0.05), radius: 4)

@@ -10,6 +10,7 @@
 		0EF926D5DF907C8E05EF4396 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 07F0135406D4E1F3174C597B /* MLXLLM */; };
 		0F99A5F7A641A865D46D70EC /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 5977EE729515FE82A35BA7D5 /* MLXLMCommon */; };
 		5A15DD99B50E84CEED061E1D /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 2963D5CF9606BFE4A36DAFE3 /* MLX */; };
+		7663BCB0897A5714753EA6AB /* StreamingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90EA0336B53C37F45F4FFC9 /* StreamingEngine.swift */; };
 		84FB291EC8A7B8B380C7A9C2 /* StreamBenchmarkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755AD15A8EEE3177A81B29BB /* StreamBenchmarkApp.swift */; };
 		8C6253BFAB0FF3BA91552802 /* MLXNN in Frameworks */ = {isa = PBXBuildFile; productRef = BA055E7F51A9ABE52BD8F0CE /* MLXNN */; };
 /* End PBXBuildFile section */
@@ -20,6 +21,7 @@
 		2474603047A90F96DC31CA9B /* StreamBenchmarkApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = StreamBenchmarkApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		58D1C8B0F5FBB5764FBDC5C3 /* mlx-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "mlx-swift"; path = "../../H2OAttnScore/mlx-swift"; sourceTree = SOURCE_ROOT; };
 		755AD15A8EEE3177A81B29BB /* StreamBenchmarkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamBenchmarkApp.swift; sourceTree = "<group>"; };
+		F90EA0336B53C37F45F4FFC9 /* StreamingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -42,6 +44,7 @@
 			children = (
 				1BA9C1501545F2F69364B432 /* StreamBenchmarkApp.entitlements */,
 				755AD15A8EEE3177A81B29BB /* StreamBenchmarkApp.swift */,
+				F90EA0336B53C37F45F4FFC9 /* StreamingEngine.swift */,
 			);
 			path = StreamBenchmarkApp;
 			sourceTree = "<group>";
@@ -141,6 +144,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				84FB291EC8A7B8B380C7A9C2 /* StreamBenchmarkApp.swift in Sources */,
+				7663BCB0897A5714753EA6AB /* StreamingEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

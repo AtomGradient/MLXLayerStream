@@ -11,6 +11,7 @@ let package = Package(
     dependencies: [
         .package(path: "../../H2OAttnScore/mlx-swift"),
         .package(path: "../../H2OAttnScore/mlx-swift-lm"),
+        .package(url: "https://github.com/huggingface/swift-transformers", .upToNextMinor(from: "1.1.0")),
     ],
     targets: [
         .executableTarget(
@@ -20,6 +21,7 @@ let package = Package(
                 .product(name: "MLXNN", package: "mlx-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
             ],
             path: "StreamBenchmarkApp"
         ),
