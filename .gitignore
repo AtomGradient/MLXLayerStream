@@ -1,0 +1,32 @@
+# MLX ecosystem (cloned repos, not tracked)
+mlx/
+mlx-lm/
+mlx-swift/
+mlx-swift-lm/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Build
+build/
+*.o
+
+# Models (too large)
+models/
+*.mlpackage/
+*.safetensors
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Progress notes (local only)
+Progress_*.md
