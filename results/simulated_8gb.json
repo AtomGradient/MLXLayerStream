@@ -1,0 +1,50 @@
+[
+  {
+    "model": "Qwen3.5-4B-bf16",
+    "num_layers": 32,
+    "per_layer_mb": 212.7915802001953,
+    "non_layer_gb": 1.1840876620262861,
+    "resident": 27,
+    "streamed": 5,
+    "streaming_needed": true,
+    "mac_tps": 9.0,
+    "peak_mem_gb": 7.08,
+    "io_pct": 62.5,
+    "ipad_tps_est": 3.33
+  },
+  {
+    "model": "Qwen3.5-9B-6bit",
+    "num_layers": 32,
+    "per_layer_mb": 167.5904083251953,
+    "non_layer_gb": 1.5959419589489698,
+    "resident": 32,
+    "streamed": 0,
+    "streaming_needed": false
+  },
+  {
+    "model": "Qwen3.5-9B-8bit",
+    "num_layers": 32,
+    "per_layer_mb": 219.1372833251953,
+    "non_layer_gb": 2.06957477144897,
+    "resident": 23,
+    "streamed": 9,
+    "streaming_needed": true,
+    "mac_tps": 5.2,
+    "peak_mem_gb": 7.22,
+    "io_pct": 68.5,
+    "ipad_tps_est": 1.82
+  },
+  {
+    "model": "Qwen3.5-27B-4bit",
+    "num_layers": 64,
+    "per_layer_mb": 204.1827621459961,
+    "non_layer_gb": 1.3887317311018705,
+    "resident": 28,
+    "streamed": 36,
+    "streaming_needed": true,
+    "mac_tps": 1.4,
+    "peak_mem_gb": 7.29,
+    "io_pct": 74.6,
+    "ipad_tps_est": 0.48
+  }
+]

@@ -13,6 +13,7 @@ Core mechanism:
 
 import glob
 import re
+import threading
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -203,6 +204,66 @@ class LayerStreamer:
             "unloads_count": 0,
         }
 
+    # ── Prefetch API ──────────────────────────────────────────────
+
+    def prefetch_layer(self, layer_idx: int):
+        """Start preparing layer weights in a background thread.
+
+        Does Python-level work (mx.load header + sanitize) in background.
+        GPU eval is deferred to apply_prefetched() on main thread.
+        """
+        if layer_idx in self.resident_layers:
+            return None
+
+        def _do_prefetch():
+            raw_weights = {}
+            for wf, keys in self.layer_file_keys[layer_idx]:
+                file_data = mx.load(wf)
+                for k in keys:
+                    raw_weights[k] = file_data[k]
+
+            if hasattr(self.model, "sanitize"):
+                raw_weights = self.model.sanitize(raw_weights)
+
+            self._prefetched[layer_idx] = raw_weights
+
+        if not hasattr(self, "_prefetched"):
+            self._prefetched = {}
+            self._prefetch_threads = {}
+
+        t = threading.Thread(target=_do_prefetch)
+        t.start()
+        self._prefetch_threads[layer_idx] = t
+        return t
+
+    def apply_prefetched(self, layer_idx: int):
+        """Apply previously prefetched weights to the model.
+
+        Waits for the prefetch thread, then does GPU eval on main thread.
+        """
+        if layer_idx in self.resident_layers:
+            return
+
+        t0 = time.perf_counter()
+
+        # Wait for prefetch to complete
+        thread = self._prefetch_threads.pop(layer_idx, None)
+        if thread is not None:
+            thread.join()
+
+        raw_weights = self._prefetched.pop(layer_idx, None)
+        if raw_weights is None:
+            # Fallback: synchronous load
+            self.load_layer(layer_idx)
+            return
+
+        self.model.load_weights(list(raw_weights.items()), strict=False)
+        mx.eval(self._layers[layer_idx].parameters())
+
+        t1 = time.perf_counter()
+        self.stats["load_times_ms"].append((t1 - t0) * 1000)
+        self.stats["loads_count"] += 1
+
 
 def streaming_forward(model, streamer, inputs, cache=None, input_embeddings=None):
     """Forward pass with layer-streaming: load/unload weights per layer.
@@ -262,6 +323,67 @@ def streaming_forward(model, streamer, inputs, cache=None, input_embeddings=None
     hidden_states = text_model.norm(hidden_states)
     logits = lm_head_fn(hidden_states)
 
+    return logits
+
+
+def streaming_forward_prefetch(model, streamer, inputs, cache=None, input_embeddings=None):
+    """Forward pass with prefetching: load layer i+1 while computing layer i."""
+    # Get the inner text model
+    if hasattr(model, "language_model"):
+        text_model = model.language_model.model
+        lm_head_fn = lambda out: model.language_model.lm_head(out)
+        if model.language_model.args.tie_word_embeddings:
+            lm_head_fn = lambda out: text_model.embed_tokens.as_linear(out)
+    elif hasattr(model, "model"):
+        text_model = model.model
+        if hasattr(model, "lm_head"):
+            lm_head_fn = lambda out: model.lm_head(out)
+        else:
+            lm_head_fn = lambda out: text_model.embed_tokens.as_linear(out)
+    else:
+        text_model = model
+        lm_head_fn = lambda out: model.lm_head(out)
+
+    if input_embeddings is not None:
+        hidden_states = input_embeddings
+    else:
+        hidden_states = text_model.embed_tokens(inputs)
+
+    if cache is None:
+        cache = [None] * len(text_model.layers)
+
+    from mlx_lm.models.base import create_attention_mask, create_ssm_mask
+
+    fa_mask = create_attention_mask(hidden_states, cache[text_model.fa_idx])
+    ssm_mask = create_ssm_mask(hidden_states, cache[text_model.ssm_idx])
+
+    num_layers = len(text_model.layers)
+
+    # Start prefetch for layer 0
+    streamer.prefetch_layer(0)
+
+    for i, (layer, c) in enumerate(zip(text_model.layers, cache)):
+        # Apply prefetched weights (waits if still loading)
+        streamer.apply_prefetched(i)
+
+        # Start prefetch for next layer (overlaps with current compute)
+        if i + 1 < num_layers:
+            streamer.prefetch_layer(i + 1)
+
+        # Forward
+        mask = ssm_mask if layer.is_linear else fa_mask
+        hidden_states = layer(hidden_states, mask=mask, cache=c)
+
+        # Force eval before unloading
+        mx.eval(hidden_states)
+        if c is not None and hasattr(c, "state"):
+            mx.eval(c.state)
+
+        # Unload current layer
+        streamer.unload_layer(i)
+
+    hidden_states = text_model.norm(hidden_states)
+    logits = lm_head_fn(hidden_states)
     return logits
 
 

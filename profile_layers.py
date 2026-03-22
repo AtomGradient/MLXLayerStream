@@ -53,11 +53,11 @@ def profile_model(model_path):
 
     model, tokenizer = load(model_path)
 
-    # Get layers
-    if hasattr(model, "language_model"):
-        layers = model.language_model.layers
-        embed = model.language_model.embed_tokens
-        norm = model.language_model.norm
+    # Get layers - handle nested model structure
+    if hasattr(model, "language_model") and hasattr(model.language_model, "model"):
+        layers = model.language_model.model.layers
+        embed = model.language_model.model.embed_tokens
+        norm = model.language_model.model.norm
     elif hasattr(model, "model"):
         layers = model.model.layers
         embed = model.model.embed_tokens
