@@ -1,0 +1,369 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0EF926D5DF907C8E05EF4396 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 07F0135406D4E1F3174C597B /* MLXLLM */; };
+		0F99A5F7A641A865D46D70EC /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 5977EE729515FE82A35BA7D5 /* MLXLMCommon */; };
+		5A15DD99B50E84CEED061E1D /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 2963D5CF9606BFE4A36DAFE3 /* MLX */; };
+		84FB291EC8A7B8B380C7A9C2 /* StreamBenchmarkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755AD15A8EEE3177A81B29BB /* StreamBenchmarkApp.swift */; };
+		8C6253BFAB0FF3BA91552802 /* MLXNN in Frameworks */ = {isa = PBXBuildFile; productRef = BA055E7F51A9ABE52BD8F0CE /* MLXNN */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		050ED947E3AB814A853376B9 /* mlx-swift-lm */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "mlx-swift-lm"; path = "../../H2OAttnScore/mlx-swift-lm"; sourceTree = SOURCE_ROOT; };
+		1BA9C1501545F2F69364B432 /* StreamBenchmarkApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = StreamBenchmarkApp.entitlements; sourceTree = "<group>"; };
+		2474603047A90F96DC31CA9B /* StreamBenchmarkApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = StreamBenchmarkApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		58D1C8B0F5FBB5764FBDC5C3 /* mlx-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "mlx-swift"; path = "../../H2OAttnScore/mlx-swift"; sourceTree = SOURCE_ROOT; };
+		755AD15A8EEE3177A81B29BB /* StreamBenchmarkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamBenchmarkApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		17398098E6F8FCB4C4F1C7A4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5A15DD99B50E84CEED061E1D /* MLX in Frameworks */,
+				8C6253BFAB0FF3BA91552802 /* MLXNN in Frameworks */,
+				0EF926D5DF907C8E05EF4396 /* MLXLLM in Frameworks */,
+				0F99A5F7A641A865D46D70EC /* MLXLMCommon in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		22E14E347A7632BFBB54B152 /* StreamBenchmarkApp */ = {
+			isa = PBXGroup;
+			children = (
+				1BA9C1501545F2F69364B432 /* StreamBenchmarkApp.entitlements */,
+				755AD15A8EEE3177A81B29BB /* StreamBenchmarkApp.swift */,
+			);
+			path = StreamBenchmarkApp;
+			sourceTree = "<group>";
+		};
+		39DDAF867B57B46F4A4A5789 = {
+			isa = PBXGroup;
+			children = (
+				8B3122C565D86C4091B2D7B7 /* Packages */,
+				22E14E347A7632BFBB54B152 /* StreamBenchmarkApp */,
+				9A146AD2D09C2036E153E330 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8B3122C565D86C4091B2D7B7 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				58D1C8B0F5FBB5764FBDC5C3 /* mlx-swift */,
+				050ED947E3AB814A853376B9 /* mlx-swift-lm */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		9A146AD2D09C2036E153E330 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2474603047A90F96DC31CA9B /* StreamBenchmarkApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DB55A29C1716D58AF86B3DF7 /* StreamBenchmarkApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E971D4B324EFB007B88F72D4 /* Build configuration list for PBXNativeTarget "StreamBenchmarkApp" */;
+			buildPhases = (
+				1A62077E9920B5DB733CD4E5 /* Sources */,
+				17398098E6F8FCB4C4F1C7A4 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = StreamBenchmarkApp;
+			packageProductDependencies = (
+				2963D5CF9606BFE4A36DAFE3 /* MLX */,
+				BA055E7F51A9ABE52BD8F0CE /* MLXNN */,
+				07F0135406D4E1F3174C597B /* MLXLLM */,
+				5977EE729515FE82A35BA7D5 /* MLXLMCommon */,
+			);
+			productName = StreamBenchmarkApp;
+			productReference = 2474603047A90F96DC31CA9B /* StreamBenchmarkApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		99CEA8F49F3667A6BC0B35C0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					DB55A29C1716D58AF86B3DF7 = {
+						DevelopmentTeam = LURMZC2XJB;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = B4168D60A48DA1B629FC287B /* Build configuration list for PBXProject "StreamBenchmarkApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 39DDAF867B57B46F4A4A5789;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0EBB42457BF602C89E00EA97 /* XCLocalSwiftPackageReference "../../H2OAttnScore/mlx-swift" */,
+				853A1584B77B379799BA88C8 /* XCLocalSwiftPackageReference "../../H2OAttnScore/mlx-swift-lm" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 9A146AD2D09C2036E153E330 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DB55A29C1716D58AF86B3DF7 /* StreamBenchmarkApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A62077E9920B5DB733CD4E5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				84FB291EC8A7B8B380C7A9C2 /* StreamBenchmarkApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1C6AEC166D4794E30B6A4203 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3F5EEA1C4709CCFFEB8C44BC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		5656F51B2C4D8D49ED5FB9CE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = StreamBenchmarkApp/StreamBenchmarkApp.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LURMZC2XJB;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.atomgradient.StreamBenchmarkApp;
+				PRODUCT_NAME = StreamBenchmarkApp;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7AF5D2E67FB16471944856C7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = StreamBenchmarkApp/StreamBenchmarkApp.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = LURMZC2XJB;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_UIFileSharingEnabled = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.atomgradient.StreamBenchmarkApp;
+				PRODUCT_NAME = StreamBenchmarkApp;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B4168D60A48DA1B629FC287B /* Build configuration list for PBXProject "StreamBenchmarkApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1C6AEC166D4794E30B6A4203 /* Debug */,
+				3F5EEA1C4709CCFFEB8C44BC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E971D4B324EFB007B88F72D4 /* Build configuration list for PBXNativeTarget "StreamBenchmarkApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5656F51B2C4D8D49ED5FB9CE /* Debug */,
+				7AF5D2E67FB16471944856C7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0EBB42457BF602C89E00EA97 /* XCLocalSwiftPackageReference "../../H2OAttnScore/mlx-swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../H2OAttnScore/mlx-swift";
+		};
+		853A1584B77B379799BA88C8 /* XCLocalSwiftPackageReference "../../H2OAttnScore/mlx-swift-lm" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../H2OAttnScore/mlx-swift-lm";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		07F0135406D4E1F3174C597B /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MLXLLM;
+		};
+		2963D5CF9606BFE4A36DAFE3 /* MLX */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MLX;
+		};
+		5977EE729515FE82A35BA7D5 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MLXLMCommon;
+		};
+		BA055E7F51A9ABE52BD8F0CE /* MLXNN */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MLXNN;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 99CEA8F49F3667A6BC0B35C0 /* Project object */;
+}

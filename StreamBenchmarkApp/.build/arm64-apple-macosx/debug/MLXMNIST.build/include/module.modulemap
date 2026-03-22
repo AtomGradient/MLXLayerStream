@@ -1,0 +1,3 @@
+module MLXMNIST {
+    header "/Users/alex/Documents/Codes/MLXLayerStream/StreamBenchmarkApp/.build/arm64-apple-macosx/debug/MLXMNIST.build/include/MLXMNIST-Swift.h"
+}
