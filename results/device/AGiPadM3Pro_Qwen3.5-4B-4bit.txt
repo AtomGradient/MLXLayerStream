@@ -1,0 +1,14 @@
+=== MLX Layer-Stream Device Benchmark ===
+Model: Qwen3.5-4B-4bit
+max_tokens=200, runs=3
+Device: iPad (iPadOS 26.3.1)
+
+Strategy: Baseline
+  Avg TPS: 35.5
+  Prompt TPS: 56.8
+  Runs: [35.6, 35.4, 35.4]
+  Peak Memory: 2330 MB
+  Load Time: 1.4s
+  Tokens: 200
+
+=== END ===

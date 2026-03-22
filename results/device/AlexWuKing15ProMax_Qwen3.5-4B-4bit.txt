@@ -1,0 +1,14 @@
+=== MLX Layer-Stream Device Benchmark ===
+Model: Qwen3.5-4B-4bit
+max_tokens=200, runs=3
+Device: iPhone (iOS 26.3.1)
+
+Strategy: Baseline
+  Avg TPS: 18.4
+  Prompt TPS: 41.9
+  Runs: [18.3, 18.4, 18.4]
+  Peak Memory: 2317 MB
+  Load Time: 1.5s
+  Tokens: 200
+
+=== END ===
