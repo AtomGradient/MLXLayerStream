@@ -57,7 +57,11 @@ else
 fi
 
 # Find built app
-APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/StreamBenchmarkApp-*/Build/Products/*-iphoneos -name "StreamBenchmarkApp.app" -maxdepth 1 2>/dev/null | head -1)
+# Prefer Release build over Debug
+APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/StreamBenchmarkApp-*/Build/Products/Release-iphoneos -name "StreamBenchmarkApp.app" -maxdepth 1 2>/dev/null | head -1)
+if [ -z "$APP_PATH" ]; then
+    APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/StreamBenchmarkApp-*/Build/Products/*-iphoneos -name "StreamBenchmarkApp.app" -maxdepth 1 2>/dev/null | head -1)
+fi
 if [ -z "$APP_PATH" ]; then
     echo "ERROR: Built app not found. Run without SKIP_BUILD."
     exit 1
@@ -67,7 +71,7 @@ echo "App: $APP_PATH"
 # ── Discover Devices ───────────────────────────────────────────────
 echo ""
 echo "--- Discovering devices ---"
-DEVICES=$(xcrun devicectl list devices 2>/dev/null | grep -E "connected" | grep -v "Simulator")
+DEVICES=$(xcrun devicectl list devices 2>/dev/null | grep -E "(connected|available \(paired\))" | grep -v "Simulator" | grep -v "Apple Watch")
 
 if [ -z "$DEVICES" ]; then
     echo "No connected iOS devices found."

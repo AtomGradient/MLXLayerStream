@@ -106,10 +106,12 @@ def split_model(model_path, output_dir):
     if os.path.exists(config_path):
         with open(config_path) as cf:
             config = json.load(cf)
-        num_kv_heads = config.get("num_key_value_heads", config.get("num_attention_heads", 0))
-        num_heads = config.get("num_attention_heads", 1)
-        head_dim = config.get("head_dim", config.get("hidden_size", 0) // num_heads)
-        full_attn_interval = config.get("full_attention_interval", 0)
+        # Qwen3.5 is multimodal — KV params live in text_config
+        tc = config.get("text_config", config)
+        num_kv_heads = tc.get("num_key_value_heads", tc.get("num_attention_heads", 0))
+        num_heads = tc.get("num_attention_heads", 1)
+        head_dim = tc.get("head_dim", tc.get("hidden_size", 0) // num_heads)
+        full_attn_interval = tc.get("full_attention_interval", 0)
         kv_config = {
             "num_key_value_heads": num_kv_heads,
             "head_dim": head_dim,

@@ -3,12 +3,54 @@ Model: Qwen3.5-4B-4bit-streaming
 max_tokens=200, runs=3
 Device: iPhone (iOS 26.3.1)
 
-Strategy: Streaming
-  Avg TPS: 0.7
+Strategy: Full stream (predicted 1.1)
+  Avg TPS: 1.8
   Prompt TPS: 0.0
-  Runs: [0.7]
+  Runs: [1.8]
   Peak Memory: 436 MB
-  Load Time: 0.3s
+  Load Time: 0.1s
+  Tokens: 10
+Strategy: maxTPS(32/32, pred 45.9)
+  Avg TPS: 5.9
+  Prompt TPS: 0.0
+  Runs: [5.9]
+  Peak Memory: 2293 MB
+  Load Time: 0.1s
+  Tokens: 10
+Strategy: Sweep 10%(3/32)
+  Avg TPS: 2.3
+  Prompt TPS: 0.0
+  Runs: [2.3]
+  Peak Memory: 2262 MB
+  Load Time: 0.1s
+  Tokens: 10
+Strategy: Sweep 25%(8/32)
+  Avg TPS: 3.0
+  Prompt TPS: 0.0
+  Runs: [3.0]
+  Peak Memory: 916 MB
+  Load Time: 0.1s
+  Tokens: 10
+Strategy: Sweep 50%(16/32)
+  Avg TPS: 3.8
+  Prompt TPS: 0.0
+  Runs: [3.8]
+  Peak Memory: 1395 MB
+  Load Time: 0.1s
+  Tokens: 10
+Strategy: Sweep 75%(24/32)
+  Avg TPS: 4.7
+  Prompt TPS: 0.0
+  Runs: [4.7]
+  Peak Memory: 1875 MB
+  Load Time: 0.1s
+  Tokens: 10
+Strategy: Sweep 90%(28/32)
+  Avg TPS: 6.0
+  Prompt TPS: 0.0
+  Runs: [6.0]
+  Peak Memory: 2114 MB
+  Load Time: 0.1s
   Tokens: 10
 
 === END ===

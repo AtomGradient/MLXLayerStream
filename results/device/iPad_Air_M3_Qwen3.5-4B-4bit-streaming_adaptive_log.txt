@@ -1,0 +1,46 @@
+
+[2026-03-23T05:28:25Z] Loading Qwen3.5-4B-4bit-streaming, streaming=true
+[2026-03-23T05:28:25Z] Model type: qwen3_5
+[2026-03-23T05:28:25Z] KV config: kvHeads=4, headDim=256, fullAttnInterval=4, bytesPerToken=32768
+[2026-03-23T05:28:25Z] Model architecture created
+[2026-03-23T05:28:25Z] Model quantized (per-layer config)
+[2026-03-23T05:28:25Z] Non-layer weights loaded: 4 tensors
+[2026-03-23T05:28:25Z] Streaming info: 32 layers
+[2026-03-23T05:28:25Z] Streaming model loaded: Qwen3.5-4B-4bit-streaming, 341 MB, 0.3s
+[2026-03-23T05:28:25Z] === Adaptive Hybrid Residency Benchmark ===
+[2026-03-23T05:28:25Z] Model: 2229MB, non_layer=341MB, avg_layer=59MB
+[2026-03-23T05:28:25Z] Device available memory: 7826MB
+[2026-03-23T05:28:25Z] KV config: bytesPerToken=32768, fullAttnInterval=4
+[2026-03-23T05:28:25Z] --- Full streaming (0% resident) ---
+[2026-03-23T05:28:29Z] Full stream: actual=2.30 TPS, predicted=1.06 TPS, 436 MB, load=7ms/layer
+[2026-03-23T05:28:29Z] --- maxTPS: 32/32 resident, kvReserve=16MB, layerBudget=7181MB, avail=7747MB ---
+[2026-03-23T05:28:29Z] [SE] Loading 32 resident layers...
+[2026-03-23T05:28:30Z] [SE] 32 resident layers loaded, mem=2258MB
+[2026-03-23T05:28:30Z] maxTPS(32/32): actual=22.75 TPS, predicted=45.94 TPS (err=102%), 2293 MB, load=0ms/layer
+[2026-03-23T05:28:30Z] --- balanced: 32/32 (same as previous, skipping) ---
+[2026-03-23T05:28:30Z] --- maxContext: 32/32 (same as previous, skipping) ---
+[2026-03-23T05:28:30Z] --- Sweep: finding optimal balance point ---
+[2026-03-23T05:28:30Z] [SE] Loading 3 resident layers...
+[2026-03-23T05:28:30Z] [SE] 3 resident layers loaded, mem=2258MB
+[2026-03-23T05:28:34Z] Sweep 10% (3/32): actual=3.07 TPS, predicted=1.17 TPS, 2262 MB
+[2026-03-23T05:28:34Z] [SE] Loading 8 resident layers...
+[2026-03-23T05:28:34Z] [SE] 8 resident layers loaded, mem=820MB
+[2026-03-23T05:28:36Z] Sweep 25% (8/32): actual=3.86 TPS, predicted=1.40 TPS, 916 MB
+[2026-03-23T05:28:36Z] [SE] Loading 16 resident layers...
+[2026-03-23T05:28:36Z] [SE] 16 resident layers loaded, mem=1299MB
+[2026-03-23T05:28:38Z] Sweep 50% (16/32): actual=5.16 TPS, predicted=2.07 TPS, 1395 MB
+[2026-03-23T05:28:38Z] [SE] Loading 24 resident layers...
+[2026-03-23T05:28:38Z] [SE] 24 resident layers loaded, mem=1779MB
+[2026-03-23T05:28:40Z] Sweep 75% (24/32): actual=6.52 TPS, predicted=3.96 TPS, 1875 MB
+[2026-03-23T05:28:40Z] [SE] Loading 28 resident layers...
+[2026-03-23T05:28:41Z] [SE] 28 resident layers loaded, mem=2018MB
+[2026-03-23T05:28:42Z] Sweep 90% (28/32): actual=10.27 TPS, predicted=7.30 TPS, 2114 MB
+[2026-03-23T05:28:42Z] === RESULTS ===
+Full stream (predicted 1.1): 2.30 TPS
+maxTPS(32/32, pred 45.9): 22.75 TPS
+Sweep 10%(3/32): 3.07 TPS
+Sweep 25%(8/32): 3.86 TPS
+Sweep 50%(16/32): 5.16 TPS
+Sweep 75%(24/32): 6.52 TPS
+Sweep 90%(28/32): 10.27 TPS
+[2026-03-23T05:28:42Z] Results saved

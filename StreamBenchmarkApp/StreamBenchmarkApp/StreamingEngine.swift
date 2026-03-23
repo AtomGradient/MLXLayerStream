@@ -5,10 +5,10 @@ import MLXLMCommon
 
 // MARK: - Platform Memory Query
 
-/// Get available memory in bytes. iOS uses getAvailableMemoryBytes(), macOS uses host_statistics64.
+/// Get available memory in bytes. iOS uses os_proc_available_memory(), macOS uses host_statistics64.
 func getAvailableMemoryBytes() -> UInt64 {
     #if os(iOS) || os(tvOS) || os(watchOS)
-    return UInt64(getAvailableMemoryBytes())
+    return UInt64(os_proc_available_memory())
     #else
     // macOS: use host_statistics64 to get free + inactive memory
     var stats = vm_statistics64_data_t()

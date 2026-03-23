@@ -1,0 +1,30 @@
+
+[2026-03-23T05:28:25Z] Loading Qwen3.5-4B-4bit-streaming, streaming=true
+[2026-03-23T05:28:25Z] Model type: qwen3_5
+[2026-03-23T05:28:25Z] KV config: kvHeads=4, headDim=256, fullAttnInterval=4, bytesPerToken=32768
+[2026-03-23T05:28:25Z] Model architecture created
+[2026-03-23T05:28:25Z] Model quantized (per-layer config)
+[2026-03-23T05:28:25Z] Non-layer weights loaded: 4 tensors
+[2026-03-23T05:28:25Z] Streaming info: 32 layers
+[2026-03-23T05:28:25Z] Streaming model loaded: Qwen3.5-4B-4bit-streaming, 341 MB, 0.3s
+[2026-03-23T05:28:25Z] === Adaptive Hybrid Residency Benchmark ===
+[2026-03-23T05:28:25Z] Model: 2229MB, non_layer=341MB, avg_layer=59MB
+[2026-03-23T05:28:25Z] Device available memory: 7826MB
+[2026-03-23T05:28:25Z] KV config: bytesPerToken=32768, fullAttnInterval=4
+[2026-03-23T05:28:25Z] --- Full streaming (0% resident) ---
+[2026-03-23T05:28:29Z] Full stream: actual=2.30 TPS, predicted=1.06 TPS, 436 MB, load=7ms/layer
+[2026-03-23T05:28:29Z] --- maxTPS: 32/32 resident, kvReserve=16MB, layerBudget=7181MB, avail=7747MB ---
+[2026-03-23T05:28:29Z] [SE] Loading 32 resident layers...
+[2026-03-23T05:28:30Z] [SE] 32 resident layers loaded, mem=2258MB
+[2026-03-23T05:28:30Z] maxTPS(32/32): actual=22.75 TPS, predicted=45.94 TPS (err=102%), 2293 MB, load=0ms/layer
+[2026-03-23T05:28:30Z] --- balanced: 32/32 (same as previous, skipping) ---
+[2026-03-23T05:28:30Z] --- maxContext: 32/32 (same as previous, skipping) ---
+[2026-03-23T05:28:30Z] --- Sweep: finding optimal balance point ---
+[2026-03-23T05:28:30Z] [SE] Loading 3 resident layers...
+[2026-03-23T05:28:30Z] [SE] 3 resident layers loaded, mem=2258MB
+[2026-03-23T05:28:34Z] Sweep 10% (3/32): actual=3.07 TPS, predicted=1.17 TPS, 2262 MB
+[2026-03-23T05:28:34Z] [SE] Loading 8 resident layers...
+[2026-03-23T05:28:34Z] [SE] 8 resident layers loaded, mem=820MB
+[2026-03-23T05:28:36Z] Sweep 25% (8/32): actual=3.86 TPS, predicted=1.40 TPS, 916 MB
+[2026-03-23T05:28:36Z] [SE] Loading 16 resident layers...
+[2026-03-23T05:28:36Z] [SE] 16 resident layers loaded, mem=1299MB

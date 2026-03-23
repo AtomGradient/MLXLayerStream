@@ -117,8 +117,10 @@ class BenchmarkViewModel: ObservableObject {
 
     func loadModel() async {
         isRunning = true
+        streamLog("=== App loadModel() started ===")
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let localModelURL = docsURL.appendingPathComponent("model")
+        streamLog("Model dir: \(localModelURL.path), avail mem: \(getAvailableMemoryBytes() / (1024*1024))MB")
 
         let nameFile = docsURL.appendingPathComponent("model_name.txt")
         if let name = try? String(contentsOf: nameFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
@@ -246,18 +248,21 @@ class BenchmarkViewModel: ObservableObject {
     }
 
     /// Parse KV cache parameters from model config.json.
+    /// Qwen3.5 is multimodal — KV params live under text_config.
     private func parseKVConfig(configData: Data) -> KVCacheConfig {
         guard let json = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
             return .unknown
         }
-        let numKVHeads = json["num_key_value_heads"] as? Int ?? json["num_attention_heads"] as? Int ?? 0
-        let headDim = json["head_dim"] as? Int ?? {
-            let hiddenSize = json["hidden_size"] as? Int ?? 0
-            let numHeads = json["num_attention_heads"] as? Int ?? 1
+        // Look in text_config first (Qwen3.5 multimodal), fallback to top-level
+        let tc = json["text_config"] as? [String: Any] ?? json
+        let numKVHeads = tc["num_key_value_heads"] as? Int ?? tc["num_attention_heads"] as? Int ?? 0
+        let headDim = tc["head_dim"] as? Int ?? {
+            let hiddenSize = tc["hidden_size"] as? Int ?? 0
+            let numHeads = tc["num_attention_heads"] as? Int ?? 1
             return hiddenSize / numHeads
         }()
-        let numLayers = json["num_hidden_layers"] as? Int ?? 0
-        let fullAttnInterval = json["full_attention_interval"] as? Int ?? 0
+        let numLayers = tc["num_hidden_layers"] as? Int ?? 0
+        let fullAttnInterval = tc["full_attention_interval"] as? Int ?? 0
         return KVCacheConfig(
             numKeyValueHeads: numKVHeads,
             headDim: headDim,
