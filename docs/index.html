@@ -145,6 +145,25 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <span class="e">9B-6bit: impossible without streaming, now runs at 1.78 GB peak memory on 8GB devices.</span>
 <span class="z">9B-6bit：无流式无法运行，现在在 8GB 设备上仅用 1.78 GB 峰值内存即可运行。</span>
 </p>
+
+<h3 style="margin-top:24px"><span class="e">Hybrid Residency: 9B-6bit on 8GB Devices</span><span class="z">混合驻留：9B-6bit 在 8GB 设备上</span></h3>
+<p style="font-size:0.85rem;color:var(--text2);margin-bottom:12px">
+<span class="e">Keep N layers resident in memory, stream only the rest. More resident layers = higher TPS, more memory.</span>
+<span class="z">将 N 层驻留在内存中，仅流式加载其余层。驻留层越多 = TPS 越高，内存占用越多。</span>
+</p>
+<table>
+<tr><th><span class="e">Budget</span><span class="z">预算</span></th><th><span class="e">Resident</span><span class="z">驻留</span></th><th><span class="e">Streamed</span><span class="z">流式</span></th><th>iPad M3</th><th>iPhone A17</th><th><span class="e">Memory</span><span class="z">内存</span></th></tr>
+<tr><td><span class="e">Full stream</span><span class="z">全流式</span></td><td>0/32</td><td>32</td><td>0.28 TPS</td><td>0.27 TPS</td><td>1.78 GB</td></tr>
+<tr><td>2.0 GB</td><td>2/32</td><td>30</td><td>0.30 TPS</td><td>0.29 TPS</td><td>2.12 GB</td></tr>
+<tr><td>3.0 GB</td><td>8/32</td><td>24</td><td>0.37 TPS</td><td>0.34 TPS</td><td>3.12 GB</td></tr>
+<tr><td>3.5 GB</td><td>11/32</td><td>21</td><td>0.39 TPS</td><td>0.39 TPS</td><td>3.63 GB</td></tr>
+<tr class="highlight"><td><strong>4.0 GB</strong></td><td><strong>14/32</strong></td><td><strong>18</strong></td><td><strong>0.45 TPS (+61%)</strong></td><td><strong>0.45 TPS (+67%)</strong></td><td><strong>4.13 GB</strong></td></tr>
+<tr><td>5.0 GB</td><td>20/32</td><td>12</td><td>0.57 TPS</td><td style="color:#d32f2f">0.21 TPS*</td><td>5.13 GB</td></tr>
+</table>
+<p style="font-size:0.75rem;color:var(--text2)">
+<span class="e">*iPhone 5GB: iOS memory pressure causes swap, TPS drops. Recommended budget: <strong>4 GB</strong>.</span>
+<span class="z">*iPhone 5GB：iOS 内存压力导致交换，TPS 下降。推荐预算：<strong>4 GB</strong>。</span>
+</p>
 </div>
 </section>
 

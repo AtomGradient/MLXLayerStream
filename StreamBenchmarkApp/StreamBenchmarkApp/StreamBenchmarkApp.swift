@@ -276,68 +276,91 @@ class BenchmarkViewModel: ObservableObject {
         saveResults()
     }
 
-    private func runStreamingBenchmark(_ engine: StreamingEngine) async {
-        isRunning = true
-        results = []
-
-        status = "Streaming: starting..."
-        streamLog("Streaming benchmark starting...")
+    /// Run a single streaming decode pass and return (tps, peakMB, avgLoadMs)
+    private func runStreamingPass(_ engine: StreamingEngine, maxTokens: Int, label: String) -> (Double, Double, Double) {
         GPU.clearCache()
         GPU.resetPeakMemory()
         engine.resetStats()
 
-        // Simple decode test
-        let inputTokens: [Int32] = [9707]  // "Hello" token
+        let inputTokens: [Int32] = [9707]
         var currentInput = MLXArray(inputTokens).reshaped([1, 1])
-        streamLog("Input created: shape=\(currentInput.shape), dtype=\(currentInput.dtype)")
-
         let cache = engine.newCache()
-        streamLog("Cache created: \(cache.count) entries")
-
-        let maxTokens = 10
         let start = CFAbsoluteTimeGetCurrent()
 
-        do {
-            for step in 0..<maxTokens {
-                status = "Streaming: token \(step+1)/\(maxTokens)..."
-                streamLog("Step \(step): input shape=\(currentInput.shape), mem=\(GPU.activeMemory/(1024*1024))MB")
+        for step in 0..<maxTokens {
+            status = "\(label): token \(step+1)/\(maxTokens)..."
+            let logits = engine.streamingStep(currentInput, cache: cache)
+            eval(logits)
+            let nextToken = MLX.argMax(logits[0..., (-1)..., 0...], axis: -1)
+            eval(nextToken)
+            currentInput = nextToken.reshaped([1, 1])
+        }
 
-                let stepStart = CFAbsoluteTimeGetCurrent()
-                streamLog("Step \(step): calling streamingStep...")
-                let logits = engine.streamingStep(currentInput, cache: cache)
-                streamLog("Step \(step): streamingStep returned, logits shape=\(logits.shape)")
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+        let tps = Double(maxTokens) / elapsed
+        let peakMB = Double(GPU.peakMemory) / (1024 * 1024)
+        return (tps, peakMB, engine.avgLoadMs)
+    }
 
-                streamLog("Step \(step): eval(logits)...")
-                eval(logits)
-                streamLog("Step \(step): eval done, \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent()-stepStart)*1000))ms")
+    private func runStreamingBenchmark(_ engine: StreamingEngine) async {
+        isRunning = true
+        results = []
+        let maxTokens = 10
 
-                let nextToken = MLX.argMax(logits[0..., (-1)..., 0...], axis: -1)
-                eval(nextToken)
-                streamLog("Step \(step): next token selected, mem=\(GPU.activeMemory/(1024*1024))MB peak=\(GPU.peakMemory/(1024*1024))MB")
-                currentInput = nextToken.reshaped([1, 1])
+        // Read streaming info for hybrid calculation
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let modelDir = docsURL.appendingPathComponent("model")
+        var avgLayerMB = 0
+        var nonLayerMB = 0
+        if let infoData = try? Data(contentsOf: modelDir.appendingPathComponent("streaming_info.json")),
+           let info = try? JSONSerialization.jsonObject(with: infoData) as? [String: Any] {
+            avgLayerMB = (info["avg_layer_bytes"] as? Int ?? 0) / (1024 * 1024)
+            nonLayerMB = (info["non_layer_size_bytes"] as? Int ?? 0) / (1024 * 1024)
+        }
+
+        // Run 1: Full streaming (0% resident)
+        status = "Stream (full)..."
+        streamLog("=== Full streaming ===")
+        engine.residentLayers = []
+        let (tps1, peak1, load1) = runStreamingPass(engine, maxTokens: maxTokens, label: "Full stream")
+        streamLog(String(format: "Full stream: %.2f TPS, %.0f MB, load=%.0fms/layer", tps1, peak1, load1))
+        results.append(BenchmarkResult(
+            label: "Full stream", avgTPS: tps1, promptTPS: 0,
+            allTPS: [tps1], tokenCount: maxTokens,
+            peakMemoryMB: peak1, loadTimeSeconds: loadTimeSeconds))
+
+        // Run 2-N: Hybrid at multiple budget levels
+        let budgets = [2000, 3000, 3500, 4000, 5000]
+        for budgetMB in budgets {
+            let residentCount = StreamingEngine.computeResidentCount(
+                budgetMB: budgetMB, nonLayerMB: nonLayerMB,
+                avgLayerMB: avgLayerMB, numLayers: engine.numLayers)
+
+            guard residentCount > 0 && residentCount < engine.numLayers else { continue }
+
+            // Skip if same resident count as previous budget
+            if let prev = results.last, prev.label.contains("/\(engine.numLayers))") {
+                let prevCount = Int(prev.label.components(separatedBy: "(").last?.components(separatedBy: "/").first ?? "0") ?? 0
+                if prevCount == residentCount { continue }
             }
 
-            let elapsed = CFAbsoluteTimeGetCurrent() - start
-            let tps = Double(maxTokens) / elapsed
-            let peakMB = Double(GPU.peakMemory) / (1024 * 1024)
-
+            status = "Hybrid \(residentCount)/\(engine.numLayers) (\(budgetMB)MB)..."
+            streamLog("=== Hybrid: \(residentCount)/\(engine.numLayers) resident, budget=\(budgetMB)MB ===")
+            engine.setupResidentLayers(count: residentCount)
+            let (tps, peak, load) = runStreamingPass(engine, maxTokens: maxTokens, label: "Hybrid(\(budgetMB)MB)")
+            let streamed = engine.numLayers - residentCount
+            streamLog(String(format: "Hybrid(%d/%d, %dMB): %.2f TPS, %.0f MB, load=%.0fms/layer (%d streamed)",
+                             residentCount, engine.numLayers, budgetMB, tps, peak, load, streamed))
             results.append(BenchmarkResult(
-                label: "Streaming", avgTPS: tps, promptTPS: 0,
+                label: "Hybrid(\(residentCount)/\(engine.numLayers))", avgTPS: tps, promptTPS: 0,
                 allTPS: [tps], tokenCount: maxTokens,
-                peakMemoryMB: peakMB, loadTimeSeconds: loadTimeSeconds
-            ))
-
-            let summary = String(format: "Streaming: %.2f TPS, %.0f MB, load=%.0fms/layer", tps, peakMB, engine.avgLoadMs)
-            status = summary
-            streamLog(summary)
-        } catch {
-            status = "Streaming error: \(error)"
-            streamLog("Streaming CAUGHT error: \(error)")
-            saveErrorReport(phase: "streaming-inference", error: error, model: modelName, extra: [
-                "tokens_completed": "\(maxTokens)",
-                "avg_load_ms": String(format: "%.1f", engine.avgLoadMs),
-            ])
+                peakMemoryMB: peak, loadTimeSeconds: loadTimeSeconds))
         }
+
+        // Summary
+        let summary = results.map { "\($0.label): \(String(format: "%.2f", $0.avgTPS)) TPS" }.joined(separator: " | ")
+        status = summary
+        streamLog(summary)
 
         isRunning = false
         saveResults()

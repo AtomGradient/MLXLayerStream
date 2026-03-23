@@ -283,6 +283,34 @@ Table~\ref{tab:device_streaming} shows actual decode performance with layer-stre
 
 \textbf{Key results}: (1)~Memory savings increase with model size: 63\% for 0.8B, 81\% for 4B. (2)~The 9B model fits comfortably at 1.78\,GB---well within 8\,GB device limits. (3)~Streaming TPS is I/O-bound: iPad M3 achieves $\sim$2.7$\times$ the iPhone TPS for 4B (matching NVMe+bandwidth ratio) but both devices converge to 0.3 TPS for 9B, suggesting I/O saturation at larger layer sizes.
 
+\subsection{Hybrid Residency on Devices}
+
+Full streaming is the most memory-efficient but slowest configuration. In practice, 8\,GB devices have $\sim$5--6\,GB available. By setting a memory budget and keeping as many layers resident as possible, we reduce the number of streamed layers and improve TPS proportionally.
+
+For Qwen3.5-9B-6bit with a 3.5\,GB budget: non-layer weights = 1.54\,GB, each layer = 168\,MB, yielding 11 resident layers out of 32. Only 21 layers are streamed per token.
+
+\begin{table}[h]
+\centering
+\caption{Hybrid residency for Qwen3.5-9B-6bit on real 8\,GB devices.}
+\label{tab:hybrid}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Budget} & \textbf{Resident} & \textbf{Streamed} & \textbf{iPad TPS} & \textbf{iPhone TPS} & \textbf{Memory} & \textbf{Speedup} \\
+\midrule
+Full stream  & 0/32  & 32 & 0.28 & 0.27 & 1.78\,GB & --- \\
+2.0\,GB      & 2/32  & 30 & 0.30 & 0.29 & 2.12\,GB & +7\% \\
+3.0\,GB      & 8/32  & 24 & 0.37 & 0.34 & 3.12\,GB & +32\% \\
+3.5\,GB      & 11/32 & 21 & 0.39 & 0.39 & 3.63\,GB & +43\% \\
+\textbf{4.0\,GB} & \textbf{14/32} & \textbf{18} & \textbf{0.45} & \textbf{0.45} & \textbf{4.13\,GB} & \textbf{+61\%} \\
+5.0\,GB      & 20/32 & 12 & 0.57 & 0.21$^*$ & 5.13\,GB & iPad +103\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent $^*$iPhone at 5\,GB budget: iOS memory pressure causes swap thrashing, degrading TPS below full-stream baseline.
+
+\textbf{Key findings}: (1)~TPS scales linearly with resident fraction up to the 4\,GB sweet spot (+61\% vs.\ full stream). (2)~The optimal budget for 8\,GB devices is \textbf{4\,GB}: both iPad and iPhone achieve 0.45 TPS while staying safely within memory limits. (3)~Exceeding available memory (5\,GB on iPhone) triggers OS memory pressure, causing a catastrophic TPS drop---confirming the importance of staying within budget.
+
 \subsection{Bandwidth Scaling}
 
 The iPad/iPhone TPS ratio across all tested models falls in the narrow range 1.90--1.93$\times$, closely matching the theoretical memory bandwidth ratio of $100/50 = 2\times$. This confirms that decode throughput on Apple Silicon edge devices is \textbf{bandwidth-bound}: performance scales linearly with memory bandwidth regardless of GPU core count (10 cores on iPad M3 vs.\ 6 cores on iPhone A17~Pro).
@@ -297,7 +325,7 @@ For 8\,GB devices, the optimal model configuration depends on the use case:
 \begin{itemize}
     \item \textbf{Interactive (>10 TPS)}: Qwen3.5-4B-4bit at 18.4 TPS on iPhone, 35.5 TPS on iPad. Fully resident, no streaming needed.
     \item \textbf{Quality-optimized}: Qwen3.5-4B-6bit (PPL~4.759) at 13.2/25.2 TPS (iPhone/iPad). Still fully resident at 3.32\,GB.
-    \item \textbf{Maximum quality with streaming}: Qwen3.5-9B-6bit (PPL~4.485) via layer-streaming. Measured 0.3 TPS on iPad at 1.78\,GB peak memory. Suitable for background or non-interactive generation.
+    \item \textbf{Maximum quality with streaming}: Qwen3.5-9B-6bit (PPL~4.485) via hybrid layer-streaming. Measured 0.4 TPS on iPad at 3.6\,GB with 11/32 layers resident, or 0.3 TPS at 1.8\,GB with full streaming. Suitable for background or non-interactive generation.
     \item \textbf{Hero result}: Qwen3.5-27B-4bit (PPL~4.010) via full streaming. Estimated 0.1--0.2 TPS on iPad based on Mac Studio extrapolation. Demonstrates feasibility, not practicality.
 \end{itemize}
 

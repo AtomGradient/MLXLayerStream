@@ -22,6 +22,7 @@ Running 9B+ language models on 8GB Apple Silicon edge devices by streaming layer
 | 0.8B-8bit | 103.2 TPS / 799 MB | 5.8 TPS / 293 MB | 53.5 TPS / 792 MB | 4.1 TPS / 293 MB | 63% |
 | 4B-4bit | 35.5 TPS / 2330 MB | 1.9 TPS / 436 MB | 18.4 TPS / 2317 MB | 0.7 TPS / 436 MB | 81% |
 | **9B-6bit** | **OOM** | **0.3 TPS / 1780 MB** | — | **0.3 TPS / 1780 MB** | — |
+| **9B-6bit hybrid** | **OOM** | **0.4 TPS / 3629 MB** | — | **0.4 TPS / 3629 MB** | +43% |
 
 ### Device Baselines (Fully Resident)
 
