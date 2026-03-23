@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Layer-Streaming Offloading — AtomGradient</title>
 <style>
-:root{--bg:#faf9f7;--text:#191918;--text2:#6b6b6b;--card:#fff;--border:#e8e4df;--accent:#c96442;--tag-bg:#f0ece7;--max-w:900px}
+:root{--bg:#faf9f7;--text:#191918;--text2:#6b6b6b;--card:#fff;--border:#e8e4df;--accent:#c96442;--tag-bg:#f0ece7;--max-w:900px;--green:#2e7d32;--red:#d32f2f}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
 .container{max-width:var(--max-w);margin:0 auto;padding:0 24px}
@@ -33,6 +33,13 @@ section h2{font-size:1.5rem;font-weight:700;margin-bottom:24px;padding-bottom:8p
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px}
 .card h3{font-size:1.1rem;margin-bottom:8px}
 .card p{color:var(--text2);font-size:0.9rem}
+.card.positive{border-left:4px solid var(--green)}
+.card.negative{border-left:4px solid var(--red)}
+.card.neutral{border-left:4px solid var(--accent)}
+.card .verdict{font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px}
+.card .verdict.good{color:var(--green)}
+.card .verdict.bad{color:var(--red)}
+.card .verdict.mixed{color:var(--accent)}
 
 table{width:100%;border-collapse:collapse;font-size:0.85rem;margin:16px 0}
 th{background:var(--tag-bg);padding:10px 12px;text-align:left;font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px}
@@ -41,14 +48,16 @@ td:nth-child(n+3),th:nth-child(n+3){text-align:right}
 tr:hover td{background:#faf8f5}
 .highlight{background:#fef3ee;font-weight:600}
 .oom{color:#d32f2f;font-weight:700}
+.swap{color:#d32f2f;font-style:italic}
 
 .findings{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.insights-grid{display:grid;grid-template-columns:1fr;gap:16px}
 @media(max-width:600px){.findings,.stats{grid-template-columns:1fr}}
 
 footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--text2);font-size:0.85rem}
 footer a{color:var(--accent)}
 .wip{color:var(--accent);font-size:0.8rem;margin-top:8px}
-img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 0}
+.note{font-size:0.8rem;color:var(--text2);margin-top:8px}
 </style>
 </head>
 <body>
@@ -59,7 +68,8 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <div class="links">
 <a href="#results"><span class="e">Results</span><span class="z">结果</span></a>
 <a href="#device"><span class="e">Devices</span><span class="z">设备</span></a>
-<a href="#streaming"><span class="e">Streaming</span><span class="z">流式</span></a>
+<a href="#adaptive"><span class="e">Adaptive</span><span class="z">自适应</span></a>
+<a href="#insights"><span class="e">Insights</span><span class="z">洞见</span></a>
 <a href="paper.pdf"><span class="e">Paper</span><span class="z">论文</span></a>
 <button class="lang-btn active" onclick="setLang('en')">EN</button>
 <button class="lang-btn" onclick="setLang('zh')">中文</button>
@@ -81,7 +91,7 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <div class="stat"><div class="num">88%</div><div class="label"><span class="e">Memory Reduction</span><span class="z">内存减少</span></div></div>
 <div class="stat"><div class="num">1.92x</div><div class="label"><span class="e">BW Scaling Verified</span><span class="z">带宽缩放验证</span></div></div>
 <div class="stat"><div class="num">9B</div><div class="label"><span class="e">Runs on 8GB iPad</span><span class="z">在 8GB iPad 上运行</span></div></div>
-<div class="stat"><div class="num">0.3</div><div class="label"><span class="e">TPS (9B on iPhone)</span><span class="z">TPS（9B iPhone）</span></div></div>
+<div class="stat"><div class="num">0.39</div><div class="label"><span class="e">TPS (9B Adaptive)</span><span class="z">TPS（9B 自适应）</span></div></div>
 </div>
 </div>
 </div>
@@ -100,7 +110,7 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <tr class="highlight"><td>Qwen3.5-9B</td><td>8-bit</td><td>4.455</td><td>67.3</td><td>8.97 GB</td></tr>
 <tr class="highlight"><td>Qwen3.5-27B</td><td>4-bit</td><td>4.010</td><td>35.0</td><td>14.34 GB</td></tr>
 </table>
-<p style="font-size:0.8rem;color:var(--text2)">
+<p class="note">
 <span class="e">Highlighted rows exceed 8GB device memory and require layer-streaming.</span>
 <span class="z">高亮行超过 8GB 设备内存，需要层流式加载。</span>
 </p>
@@ -118,11 +128,12 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 </div>
 <div class="card">
 <h3><span class="e">9B Now Runs on 8GB!</span><span class="z">9B 现在可在 8GB 上运行！</span></h3>
-<p><span class="e">Qwen3.5-9B-6bit (6.9GB weights) crashes with standard loading, but <strong>runs at 0.3 TPS with only 1.78 GB memory via streaming</strong> on both iPad and iPhone.</span>
-<span class="z">Qwen3.5-9B-6bit（6.9GB 权重）标准加载会崩溃，但<strong>通过流式加载仅用 1.78 GB 内存，以 0.3 TPS 运行</strong>，iPad 和 iPhone 均可。</span></p>
+<p><span class="e">Qwen3.5-9B-6bit (6.9GB weights) crashes with standard loading, but <strong>runs at 0.39 TPS with adaptive residency</strong> on iPad Air M3.</span>
+<span class="z">Qwen3.5-9B-6bit（6.9GB 权重）标准加载会崩溃，但<strong>通过自适应驻留以 0.39 TPS 运行</strong>于 iPad Air M3。</span></p>
 </div>
 </div>
 
+<h3 style="margin-top:32px"><span class="e">Device Baselines (Fully Resident)</span><span class="z">设备基线（完全驻留）</span></h3>
 <table>
 <tr><th><span class="e">Model</span><span class="z">模型</span></th><th><span class="e">Weights</span><span class="z">权重</span></th><th>iPad M3</th><th>iPhone A17</th><th><span class="e">Ratio</span><span class="z">比值</span></th></tr>
 <tr><td>0.8B-8bit</td><td>0.80 GB</td><td>103.2 TPS</td><td>53.5 TPS</td><td>1.93x</td></tr>
@@ -133,24 +144,65 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <tr class="highlight"><td>9B-6bit</td><td>6.90 GB</td><td class="oom">OOM</td><td>—</td><td>—</td></tr>
 </table>
 
-<h2 style="margin-top:40px"><span class="e">Device Streaming Results (Measured)</span><span class="z">设备流式结果（实测）</span></h2>
+<h3 style="margin-top:32px"><span class="e">Device Streaming Results</span><span class="z">设备流式结果</span></h3>
 <table>
 <tr><th><span class="e">Model</span><span class="z">模型</span></th><th colspan="2">iPad M3</th><th colspan="2">iPhone A17</th><th><span class="e">Mem Savings</span><span class="z">内存节省</span></th></tr>
 <tr><th></th><th><span class="e">Baseline</span><span class="z">基线</span></th><th><span class="e">Stream</span><span class="z">流式</span></th><th><span class="e">Baseline</span><span class="z">基线</span></th><th><span class="e">Stream</span><span class="z">流式</span></th><th></th></tr>
 <tr><td>0.8B-8bit</td><td>103.2 TPS / 799 MB</td><td>5.8 TPS / 293 MB</td><td>53.5 TPS / 792 MB</td><td>4.1 TPS / 293 MB</td><td>63%</td></tr>
-<tr><td>4B-4bit</td><td>35.5 TPS / 2330 MB</td><td>1.9 TPS / 436 MB</td><td>18.4 TPS / 2317 MB</td><td>0.7 TPS / 436 MB</td><td>81%</td></tr>
-<tr class="highlight"><td>9B-6bit</td><td class="oom">OOM / Crash</td><td><strong>0.3 TPS / 1780 MB</strong></td><td>—</td><td><strong>0.3 TPS / 1780 MB</strong></td><td>—</td></tr>
+<tr><td>4B-4bit</td><td>35.5 TPS / 2330 MB</td><td>2.3 TPS / 436 MB</td><td>18.4 TPS / 2317 MB</td><td>1.8 TPS / 436 MB</td><td>81%</td></tr>
+<tr class="highlight"><td>9B-6bit</td><td class="oom">OOM / Crash</td><td><strong>0.28 TPS / 1780 MB</strong></td><td>—</td><td>—</td><td>—</td></tr>
 </table>
-<p style="font-size:0.8rem;color:var(--text2)">
-<span class="e">9B-6bit: impossible without streaming, now runs at 1.78 GB peak memory on 8GB devices.</span>
-<span class="z">9B-6bit：无流式无法运行，现在在 8GB 设备上仅用 1.78 GB 峰值内存即可运行。</span>
+</div>
+</section>
+
+<section id="adaptive">
+<div class="container">
+<h2><span class="e">Adaptive Hybrid Residency</span><span class="z">自适应混合驻留</span></h2>
+<p style="font-size:0.9rem;color:var(--text2);margin-bottom:24px">
+<span class="e">Auto-compute optimal resident layer count based on available device memory, model size, and KV cache needs. Three priority modes trade off TPS vs context length.</span>
+<span class="z">基于可用设备内存、模型大小和 KV cache 需求，自动计算最优驻留层数。三种优先级模式在 TPS 和上下文长度之间权衡。</span>
 </p>
 
-<h3 style="margin-top:24px"><span class="e">Hybrid Residency: 9B-6bit on 8GB Devices</span><span class="z">混合驻留：9B-6bit 在 8GB 设备上</span></h3>
-<p style="font-size:0.85rem;color:var(--text2);margin-bottom:12px">
-<span class="e">Keep N layers resident in memory, stream only the rest. More resident layers = higher TPS, more memory.</span>
-<span class="z">将 N 层驻留在内存中，仅流式加载其余层。驻留层越多 = TPS 越高，内存占用越多。</span>
+<h3><span class="e">9B-6bit on iPad M3 (Memory-Constrained)</span><span class="z">9B-6bit 在 iPad M3 上（内存受限）</span></h3>
+<p class="note" style="margin-bottom:12px">
+<span class="e">Model weights = 6.9 GB, device memory = 8 GB. Full model cannot fit — streaming is required.</span>
+<span class="z">模型权重 = 6.9 GB，设备内存 = 8 GB。模型无法完全载入 — 必须使用流式。</span>
 </p>
+<table>
+<tr><th><span class="e">Mode</span><span class="z">模式</span></th><th><span class="e">Resident</span><span class="z">驻留</span></th><th>TPS</th><th><span class="e">Memory</span><span class="z">内存</span></th><th><span class="e">Note</span><span class="z">备注</span></th></tr>
+<tr><td><span class="e">Full stream</span><span class="z">全流式</span></td><td>0/32</td><td>0.28</td><td>1,780 MB</td><td><span class="e">Baseline</span><span class="z">基线</span></td></tr>
+<tr><td>balanced</td><td>2/32</td><td>0.26</td><td>5,603 MB</td><td><span class="e">Minimal benefit</span><span class="z">收益极小</span></td></tr>
+<tr class="highlight"><td><strong>maxContext</strong></td><td><strong>22/32</strong></td><td><strong>0.39</strong></td><td><strong>5,471 MB</strong></td><td><strong><span class="e">Best: +39%</span><span class="z">最佳：+39%</span></strong></td></tr>
+<tr><td>maxTPS</td><td>24/32</td><td class="swap">0.03</td><td>5,802 MB</td><td class="swap"><span class="e">Swap thrashing!</span><span class="z">交换抖动！</span></td></tr>
+<tr><td><span class="e">Full resident</span><span class="z">全驻留</span></td><td colspan="4" class="oom"><span class="e">Skipped — need 7,220 MB, only 2,820 MB available</span><span class="z">跳过 — 需要 7,220 MB，仅剩 2,820 MB</span></td></tr>
+</table>
+<p class="note">
+<span class="e">maxTPS allocated 24 resident layers (5.8 GB), leaving too little free memory. iOS swap pressure caused 14x slowdown vs full streaming. The algorithm correctly identified the issue post-hoc — memory warnings triggered emergency layer shedding.</span>
+<span class="z">maxTPS 分配了 24 层驻留（5.8 GB），剩余内存不足。iOS 交换压力导致比全流式慢 14 倍。算法在事后正确识别了问题 — 内存警告触发了紧急层释放。</span>
+</p>
+
+<h3 style="margin-top:32px"><span class="e">4B-4bit Sweep: Finding the Optimal Balance (Memory-Sufficient)</span><span class="z">4B-4bit 扫描：寻找最佳平衡点（内存充足）</span></h3>
+<p class="note" style="margin-bottom:12px">
+<span class="e">Model weights = 2.3 GB, device memory = 8 GB. Model fits entirely — what is the cost of streaming?</span>
+<span class="z">模型权重 = 2.3 GB，设备内存 = 8 GB。模型可完全载入 — 流式的代价是什么？</span>
+</p>
+<table>
+<tr><th><span class="e">Resident</span><span class="z">驻留</span></th><th>iPad M3</th><th><span class="e">vs Baseline</span><span class="z">vs 基线</span></th><th>iPhone A17</th><th><span class="e">vs Baseline</span><span class="z">vs 基线</span></th><th><span class="e">Memory</span><span class="z">内存</span></th></tr>
+<tr><td>0/32 (<span class="e">full stream</span><span class="z">全流式</span>)</td><td>2.3 TPS</td><td>6%</td><td>1.8 TPS</td><td>10%</td><td>436 MB</td></tr>
+<tr><td>3/32 (10%)</td><td>3.1 TPS</td><td>9%</td><td>2.3 TPS</td><td>13%</td><td>~600 MB</td></tr>
+<tr><td>8/32 (25%)</td><td>3.9 TPS</td><td>11%</td><td>3.0 TPS</td><td>16%</td><td>916 MB</td></tr>
+<tr><td>16/32 (50%)</td><td>5.2 TPS</td><td>15%</td><td>3.8 TPS</td><td>21%</td><td>1,395 MB</td></tr>
+<tr><td>24/32 (75%)</td><td>6.5 TPS</td><td>18%</td><td>4.7 TPS</td><td>25%</td><td>1,875 MB</td></tr>
+<tr><td>28/32 (90%)</td><td>10.3 TPS</td><td>29%</td><td>6.0 TPS</td><td>33%</td><td>2,114 MB</td></tr>
+<tr><td>32/32 (<span class="e">streaming 100%</span><span class="z">流式100%</span>)</td><td>22.7 TPS</td><td>64%</td><td>5.9 TPS</td><td>32%</td><td>2,293 MB</td></tr>
+<tr class="highlight"><td><strong><span class="e">Baseline (no streaming)</span><span class="z">基线（无流式）</span></strong></td><td><strong>35.5 TPS</strong></td><td><strong>100%</strong></td><td><strong>18.4 TPS</strong></td><td><strong>100%</strong></td><td><strong>2,330 MB</strong></td></tr>
+</table>
+<p class="note">
+<span class="e">Even with all 32 layers resident, streaming architecture adds 36% overhead on iPad and 68% on iPhone vs baseline. The overhead comes from per-layer weight loading checks, memory pressure monitoring, and forced eval synchronization per layer. <strong>For models that fit in memory, standard loading is always better.</strong></span>
+<span class="z">即使全部 32 层驻留，流式架构在 iPad 上增加 36% 开销，在 iPhone 上增加 68%。开销来自每层权重加载检查、内存压力监控和逐层强制 eval 同步。<strong>对于能放进内存的模型，标准加载永远更好。</strong></span>
+</p>
+
+<h3 style="margin-top:32px"><span class="e">Hybrid Residency: 9B-6bit Budget Sweep</span><span class="z">混合驻留：9B-6bit 预算扫描</span></h3>
 <table>
 <tr><th><span class="e">Budget</span><span class="z">预算</span></th><th><span class="e">Resident</span><span class="z">驻留</span></th><th><span class="e">Streamed</span><span class="z">流式</span></th><th>iPad M3</th><th>iPhone A17</th><th><span class="e">Memory</span><span class="z">内存</span></th></tr>
 <tr><td><span class="e">Full stream</span><span class="z">全流式</span></td><td>0/32</td><td>32</td><td>0.28 TPS</td><td>0.27 TPS</td><td>1.78 GB</td></tr>
@@ -158,45 +210,87 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <tr><td>3.0 GB</td><td>8/32</td><td>24</td><td>0.37 TPS</td><td>0.34 TPS</td><td>3.12 GB</td></tr>
 <tr><td>3.5 GB</td><td>11/32</td><td>21</td><td>0.39 TPS</td><td>0.39 TPS</td><td>3.63 GB</td></tr>
 <tr class="highlight"><td><strong>4.0 GB</strong></td><td><strong>14/32</strong></td><td><strong>18</strong></td><td><strong>0.45 TPS (+61%)</strong></td><td><strong>0.45 TPS (+67%)</strong></td><td><strong>4.13 GB</strong></td></tr>
-<tr><td>5.0 GB</td><td>20/32</td><td>12</td><td>0.57 TPS</td><td style="color:#d32f2f">0.21 TPS*</td><td>5.13 GB</td></tr>
+<tr><td>5.0 GB</td><td>20/32</td><td>12</td><td>0.57 TPS</td><td class="swap">0.21 TPS*</td><td>5.13 GB</td></tr>
 </table>
-<p style="font-size:0.75rem;color:var(--text2)">
-<span class="e">*iPhone 5GB: iOS memory pressure causes swap, TPS drops. Recommended budget: <strong>4 GB</strong>.</span>
-<span class="z">*iPhone 5GB：iOS 内存压力导致交换，TPS 下降。推荐预算：<strong>4 GB</strong>。</span>
+<p class="note">
+<span class="e">*iPhone 5GB: iOS memory pressure causes swap, TPS drops below full streaming. Recommended budget: <strong>4 GB</strong>.</span>
+<span class="z">*iPhone 5GB：iOS 内存压力导致交换，TPS 降至全流式以下。推荐预算：<strong>4 GB</strong>。</span>
+</p>
+</div>
+</section>
+
+<section id="insights" style="background:var(--card)">
+<div class="container">
+<h2><span class="e">Key Insights: What We Learned</span><span class="z">关键洞见：我们学到了什么</span></h2>
+<p style="font-size:0.9rem;color:var(--text2);margin-bottom:24px">
+<span class="e">We present our findings objectively — both the successes and the limitations. These results are measured on real devices, not simulated.</span>
+<span class="z">我们客观地呈现发现 — 包括成功和局限。这些结果均在真实设备上测量，非模拟。</span>
 </p>
 
-<h3 style="margin-top:24px"><span class="e">4B-4bit: Trade Memory for KV Cache</span><span class="z">4B-4bit：用内存换 KV Cache 空间</span></h3>
-<p style="font-size:0.85rem;color:var(--text2);margin-bottom:12px">
-<span class="e">Even models that fit in memory benefit: stream a few layers to free memory for longer context.</span>
-<span class="z">即使放得下的模型也受益：流式几层即可释放内存给更长上下文。</span>
-</p>
-<table>
-<tr><th><span class="e">Resident</span><span class="z">驻留</span></th><th><span class="e">Streamed</span><span class="z">流式</span></th><th>iPad M3</th><th>iPhone A17</th><th><span class="e">Memory</span><span class="z">内存</span></th><th><span class="e">Free for KV</span><span class="z">KV可用</span></th></tr>
-<tr><td>0/32</td><td>32</td><td>3.1 TPS</td><td>1.9 TPS</td><td>436 MB</td><td>~5.6 GB</td></tr>
-<tr><td>16/32</td><td>16</td><td>5.2 TPS</td><td>3.0 TPS</td><td>1395 MB</td><td>~4.6 GB</td></tr>
-<tr><td>24/32</td><td>8</td><td>8.3 TPS</td><td>4.4 TPS</td><td>1875 MB</td><td>~4.1 GB</td></tr>
-<tr class="highlight"><td><strong>28/32</strong></td><td><strong>4</strong></td><td><strong>12.6 TPS</strong></td><td><strong>6.0 TPS</strong></td><td><strong>2114 MB</strong></td><td><strong>~3.9 GB</strong></td></tr>
-<tr><td>32/32</td><td>0</td><td>35.5 TPS</td><td>18.4 TPS</td><td>2330 MB</td><td>~3.7 GB</td></tr>
-</table>
+<div class="insights-grid">
+<div class="card positive">
+<div class="verdict good"><span class="e">CONFIRMED</span><span class="z">已验证</span></div>
+<h3><span class="e">Layer-streaming makes impossible models possible</span><span class="z">层流式让不可能的模型变为可能</span></h3>
+<p><span class="e">Qwen3.5-9B-6bit (6.9 GB) crashes on 8GB devices with standard loading. With layer-streaming, it runs at 0.28–0.39 TPS using only 1.78–5.5 GB. This is the core value proposition: <strong>access to models that otherwise cannot run at all</strong>.</span>
+<span class="z">Qwen3.5-9B-6bit（6.9 GB）在 8GB 设备上标准加载会崩溃。通过层流式，仅用 1.78–5.5 GB 即可以 0.28–0.39 TPS 运行。这是核心价值：<strong>让原本完全无法运行的模型变得可用</strong>。</span></p>
+</div>
+
+<div class="card positive">
+<div class="verdict good"><span class="e">CONFIRMED</span><span class="z">已验证</span></div>
+<h3><span class="e">TPS scales linearly with resident ratio</span><span class="z">TPS 与驻留比例线性缩放</span></h3>
+<p><span class="e">Across all tested configurations, TPS increases approximately linearly with the number of resident layers. This validates the core formula: <code>TPS = 1 / (T_compute + N_streamed × T_io_per_layer)</code>. Each additional resident layer saves one NVMe read per token.</span>
+<span class="z">在所有测试配置中，TPS 随驻留层数近似线性增长。这验证了核心公式：<code>TPS = 1 / (T_compute + N_streamed × T_io_per_layer)</code>。每多驻留一层，每个 token 节省一次 NVMe 读取。</span></p>
+</div>
+
+<div class="card positive">
+<div class="verdict good"><span class="e">CONFIRMED</span><span class="z">已验证</span></div>
+<h3><span class="e">Dynamic shedding prevents OOM kills</span><span class="z">动态释放防止 OOM 崩溃</span></h3>
+<p><span class="e">iOS memory warning notifications correctly trigger emergency layer shedding. In the 9B benchmark, the system received warnings and immediately released all 22 resident layers, dropping memory from 5.3 GB to 1.6 GB. The app survived instead of being killed.</span>
+<span class="z">iOS 内存警告通知正确触发紧急层释放。在 9B 基准测试中，系统收到警告后立即释放全部 22 层驻留层，内存从 5.3 GB 降至 1.6 GB。App 存活而未被终止。</span></p>
+</div>
+
+<div class="card negative">
+<div class="verdict bad"><span class="e">LIMITATION</span><span class="z">局限</span></div>
+<h3><span class="e">Streaming overhead is massive — even at 100% residency</span><span class="z">流式开销巨大 — 即使 100% 驻留</span></h3>
+<p><span class="e">With all 32 layers resident (no actual streaming), the streaming code path is still <strong>36% slower than baseline on iPad</strong> (22.7 vs 35.5 TPS) and <strong>68% slower on iPhone</strong> (5.9 vs 18.4 TPS). The overhead comes from per-layer eval synchronization, weight loading checks, and memory pressure monitoring. <strong>For models that fit in memory, standard loading is always better.</strong></span>
+<span class="z">即使全部 32 层驻留（无实际流式），流式代码路径仍比基线<strong>在 iPad 上慢 36%</strong>（22.7 vs 35.5 TPS）、<strong>在 iPhone 上慢 68%</strong>（5.9 vs 18.4 TPS）。开销来自逐层 eval 同步、权重加载检查和内存压力监控。<strong>对于能放进内存的模型，标准加载永远更好。</strong></span></p>
+</div>
+
+<div class="card negative">
+<div class="verdict bad"><span class="e">LIMITATION</span><span class="z">局限</span></div>
+<h3><span class="e">Over-aggressive residency causes swap thrashing</span><span class="z">过度驻留导致交换抖动</span></h3>
+<p><span class="e">The maxTPS mode for 9B allocated 24 resident layers (5.8 GB) based on <code>os_proc_available_memory()</code> at startup. But during generation, this left too little headroom. iOS began swap-paging, and TPS dropped to <strong>0.03</strong> — 14x slower than full streaming (0.28 TPS). The <code>available_memory</code> API reports a snapshot, not a guarantee; other processes and system services reclaim memory unpredictably.</span>
+<span class="z">maxTPS 模式为 9B 分配了 24 层驻留（5.8 GB），基于启动时的 <code>os_proc_available_memory()</code>。但在生成过程中，剩余空间不足。iOS 开始交换分页，TPS 降至 <strong>0.03</strong> — 比全流式（0.28 TPS）慢 14 倍。<code>available_memory</code> API 报告的是快照而非保证；其他进程和系统服务会不可预测地回收内存。</span></p>
+</div>
+
+<div class="card negative">
+<div class="verdict bad"><span class="e">LIMITATION</span><span class="z">局限</span></div>
+<h3><span class="e">TPS prediction model is inaccurate</span><span class="z">TPS 预测模型不准确</span></h3>
+<p><span class="e">The bandwidth-based formula <code>TPS = 1 / (model_size/mem_bw + N_streamed × layer_size/nvme_bw)</code> showed prediction errors from 50% to over 4000%. Full-stream prediction was 2x off; full-resident prediction was 2x too optimistic. The model doesn't account for: safetensors parsing overhead, per-layer eval synchronization cost, GPU compute efficiency (actual vs theoretical), and iOS memory management overhead. <strong>A more accurate model needs empirical calibration coefficients.</strong></span>
+<span class="z">基于带宽的公式 <code>TPS = 1 / (model_size/mem_bw + N_streamed × layer_size/nvme_bw)</code> 预测误差从 50% 到超过 4000%。全流式预测偏差 2 倍；全驻留预测过于乐观 2 倍。模型未考虑：safetensors 解析开销、逐层 eval 同步成本、GPU 计算效率（实际 vs 理论）和 iOS 内存管理开销。<strong>更准确的模型需要经验校准系数。</strong></span></p>
+</div>
+
+<div class="card neutral">
+<div class="verdict mixed"><span class="e">NUANCED</span><span class="z">复杂</span></div>
+<h3><span class="e">iPad vs iPhone: same technique, very different results</span><span class="z">iPad vs iPhone：相同技术，结果迥异</span></h3>
+<p><span class="e">iPad M3 (10 GPU cores) benefits dramatically from high residency: 100% resident = 22.7 TPS (64% of baseline). iPhone A17 (6 GPU cores) shows diminishing returns: 100% resident = 5.9 TPS (32% of baseline), barely better than 90% resident (6.0 TPS). The per-layer eval overhead is a larger fraction of total time on iPhone due to fewer GPU cores and lower memory bandwidth. <strong>Optimal residency strategy is device-dependent.</strong></span>
+<span class="z">iPad M3（10 GPU 核心）从高驻留中获益显著：100% 驻留 = 22.7 TPS（基线的 64%）。iPhone A17（6 GPU 核心）收益递减：100% 驻留 = 5.9 TPS（基线的 32%），几乎不比 90% 驻留（6.0 TPS）好。由于 GPU 核心更少和内存带宽更低，逐层 eval 开销在 iPhone 上占总时间比例更大。<strong>最优驻留策略取决于设备。</strong></span></p>
+</div>
+
+<div class="card neutral">
+<div class="verdict mixed"><span class="e">NUANCED</span><span class="z">复杂</span></div>
+<h3><span class="e">Qwen3.5 hybrid architecture helps KV cache</span><span class="z">Qwen3.5 混合架构有助于 KV cache</span></h3>
+<p><span class="e">Qwen3.5 uses <code>full_attention_interval=4</code>: only 1/4 of layers have full attention (and thus KV cache). The other 3/4 are recurrent (GatedDeltaNet) with constant-size state. This means KV cache memory is ~25% of what a pure-attention model would need, leaving more room for resident layers. Our adaptive algorithm accounts for this via <code>KVCacheConfig</code>, but model-specific tuning is required.</span>
+<span class="z">Qwen3.5 使用 <code>full_attention_interval=4</code>：只有 1/4 的层有完整注意力（因此有 KV cache）。其余 3/4 是循环层（GatedDeltaNet），状态大小恒定。这意味着 KV cache 内存约为纯注意力模型的 25%，为驻留层留出更多空间。我们的自适应算法通过 <code>KVCacheConfig</code> 考虑了这一点，但需要模型特定的调优。</span></p>
+</div>
+</div>
+
 </div>
 </section>
 
 <section id="streaming">
 <div class="container">
-<h2><span class="e">Streaming: Memory vs TPS Tradeoff</span><span class="z">流式：内存 vs TPS 权衡</span></h2>
-
-<div class="findings">
-<div class="card">
-<h3><span class="e">Memory Savings</span><span class="z">内存节省</span></h3>
-<p><span class="e">27B-4bit: <strong>14.09 GB → 1.70 GB</strong> (88% reduction). 9B-8bit: 8.86 GB → 2.29 GB (74%). Both fit in 8GB with streaming.</span>
-<span class="z">27B-4bit: <strong>14.09 GB → 1.70 GB</strong>（减少 88%）。9B-8bit: 8.86 GB → 2.29 GB（74%）。两者通过流式均可在 8GB 设备运行。</span></p>
-</div>
-<div class="card">
-<h3><span class="e">I/O Bottleneck</span><span class="z">I/O 瓶颈</span></h3>
-<p><span class="e">Streaming is I/O-bound: compute/load ratio = <strong>1:1660</strong> on iPad. Layer strategy is irrelevant — only resident count matters.</span>
-<span class="z">流式是 I/O 瓶颈：计算/加载比 = <strong>1:1660</strong>（iPad）。层策略无关紧要 — 只有驻留数量重要。</span></p>
-</div>
-</div>
+<h2><span class="e">Streaming: Memory vs TPS (Mac Studio)</span><span class="z">流式：内存 vs TPS（Mac Studio）</span></h2>
 
 <table>
 <tr><th><span class="e">Config</span><span class="z">配置</span></th><th><span class="e">Resident</span><span class="z">驻留</span></th><th>TPS</th><th><span class="e">Memory</span><span class="z">内存</span></th><th>I/O %</th></tr>

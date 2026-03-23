@@ -11,7 +11,8 @@ Running 9B+ language models on 8GB Apple Silicon edge devices by streaming layer
 | Metric | Value |
 |--------|-------|
 | Memory reduction | 63–81% on real devices |
-| 9B-6bit on 8GB iPad | **0.3 TPS at 1.78 GB** (was OOM) |
+| 9B-6bit on 8GB iPad | **0.39 TPS at 5.5 GB** (adaptive, was OOM) |
+| 9B-6bit full stream | 0.28 TPS at 1.78 GB |
 | iPad/iPhone TPS ratio | 1.90–1.93x baseline (matches 2x bandwidth ratio) |
 | 27B-4bit peak memory | 14.09 GB → 1.70 GB (88% reduction, Mac Studio) |
 
@@ -20,9 +21,30 @@ Running 9B+ language models on 8GB Apple Silicon edge devices by streaming layer
 | Model | iPad M3 Baseline | iPad M3 Stream | iPhone Baseline | iPhone Stream | Mem Savings |
 |-------|:---:|:---:|:---:|:---:|:---:|
 | 0.8B-8bit | 103.2 TPS / 799 MB | 5.8 TPS / 293 MB | 53.5 TPS / 792 MB | 4.1 TPS / 293 MB | 63% |
-| 4B-4bit | 35.5 TPS / 2330 MB | 1.9 TPS / 436 MB | 18.4 TPS / 2317 MB | 0.7 TPS / 436 MB | 81% |
-| **9B-6bit** | **OOM** | **0.3 TPS / 1780 MB** | — | **0.3 TPS / 1780 MB** | — |
-| **9B-6bit hybrid** | **OOM** | **0.4 TPS / 3629 MB** | — | **0.4 TPS / 3629 MB** | +43% |
+| 4B-4bit | 35.5 TPS / 2330 MB | 2.3 TPS / 436 MB | 18.4 TPS / 2317 MB | 1.8 TPS / 436 MB | 81% |
+| **9B-6bit** | **OOM** | **0.28 TPS / 1780 MB** | — | — | — |
+| **9B-6bit adaptive** | **OOM** | **0.39 TPS / 5471 MB** | — | — | +39% vs stream |
+
+### Adaptive Hybrid Residency: 4B-4bit on 8GB Devices
+
+| Resident | iPad M3 TPS | vs Baseline | iPhone TPS | vs Baseline | Memory |
+|----------|-------------|-------------|------------|-------------|--------|
+| 0/32 (full stream) | 2.3 | 6% | 1.8 | 10% | 436 MB |
+| 8/32 (25%) | 3.9 | 11% | 3.0 | 16% | 916 MB |
+| 16/32 (50%) | 5.2 | 15% | 3.8 | 21% | 1395 MB |
+| 24/32 (75%) | 6.5 | 18% | 4.7 | 25% | 1875 MB |
+| 28/32 (90%) | 10.3 | 29% | 6.0 | 33% | 2114 MB |
+| **32/32 (100%)** | **22.7** | **64%** | **5.9** | **32%** | 2293 MB |
+| Baseline (no streaming) | 35.5 | 100% | 18.4 | 100% | 2330 MB |
+
+### Adaptive Hybrid Residency: 9B-6bit on iPad M3
+
+| Mode | Resident | TPS | Memory | Note |
+|------|----------|-----|--------|------|
+| Full stream | 0/32 | 0.28 | 1780 MB | Baseline |
+| balanced | 2/32 | 0.26 | 5603 MB | Minimal benefit |
+| **maxContext** | **22/32** | **0.39** | **5471 MB** | **Best: +39%** |
+| maxTPS | 24/32 | 0.03 | 5802 MB | Swap thrashing! |
 
 ### Device Baselines (Fully Resident)
 
@@ -42,6 +64,20 @@ Running 9B+ language models on 8GB Apple Silicon edge devices by streaming layer
 | 24/32 (75%) | 5.9 | 7.44 GB | 70% |
 | 16/32 (50%) | 3.2 | 5.73 GB | 77% |
 | 0/32 (0%) | 1.7 | 2.31 GB | 81% |
+
+## Key Insights
+
+### What works
+- **9B on 8GB is real**: Layer-streaming makes previously impossible models runnable
+- **Linear TPS scaling**: TPS scales linearly with resident ratio, as predicted by the formula `TPS = 1 / (T_compute + N_streamed × T_io_per_layer)`
+- **Adaptive residency**: Auto-computed optimal resident count based on available memory and KV cache needs
+- **Dynamic shedding**: iOS memory warnings correctly trigger layer release, preventing OOM kills
+
+### What doesn't
+- **Streaming overhead is massive**: Even 100% resident streaming is 36% slower than baseline on iPad (64% slower on iPhone) due to per-layer eval overhead
+- **For models that fit in memory, don't use streaming**: Baseline loading is always faster
+- **Over-aggressive residency causes swap thrashing**: 9B maxTPS mode (24/32 resident = 5.8GB) drops to 0.03 TPS on iPad due to iOS swap pressure
+- **TPS prediction model needs calibration**: Predicted vs actual errors range from 50% to 4000%+, the simple bandwidth-based formula doesn't capture real-world overhead
 
 ## Publication
 

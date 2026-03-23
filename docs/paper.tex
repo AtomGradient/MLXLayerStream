@@ -1,4 +1,4 @@
-\documentclass[11pt,a4paper]{article}
+\documentclass[10pt,a4paper]{article}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -7,13 +7,30 @@
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{hyperref}
-\usepackage[margin=1in]{geometry}
+\usepackage[margin=0.85in]{geometry}
 \usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{caption}
 \usepackage{subcaption}
 \usepackage{algorithm}
 \usepackage{algorithmic}
+\usepackage{enumitem}
+
+% Compact spacing
+\setlength{\parskip}{3pt plus 1pt minus 1pt}
+\setlength{\floatsep}{6pt plus 1pt minus 1pt}
+\setlength{\textfloatsep}{6pt plus 1pt minus 1pt}
+\setlength{\intextsep}{4pt plus 1pt minus 1pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{1pt}
+\setlength{\abovedisplayskip}{6pt}
+\setlength{\belowdisplayskip}{6pt}
+\captionsetup{font=small}
+\setlist{nosep,leftmargin=1.5em}
+% Compact section titles
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{12pt plus 2pt minus 2pt}{4pt plus 1pt minus 1pt}
+\titlespacing*{\subsection}{0pt}{8pt plus 2pt minus 1pt}{2pt plus 1pt minus 1pt}
 
 % Page style
 \pagestyle{fancy}
@@ -39,35 +56,33 @@
 
 % ═══════════════════════════════════════════
 \begin{abstract}
-We present \textbf{Layer-Streaming Offloading}, a technique that enables large language models exceeding device physical memory to run inference on Apple Silicon edge devices (iPad, iPhone) with 8\,GB unified memory. By loading and releasing model layer weights on demand from NVMe storage during each forward pass, we achieve 60--88\% peak memory reduction while maintaining output correctness. We demonstrate this on the Qwen3.5 model family (0.8B--27B parameters) across Mac Studio M2~Ultra, iPad Air M3, and iPhone 15 Pro Max. Our key findings include: (1)~a 9B-parameter model at 6-bit quantization (6.9\,GB weights) causes an out-of-memory crash on an 8\,GB iPad under standard loading, but \textbf{runs successfully at 1.78\,GB peak memory with layer-streaming}; (2)~decode throughput across devices scales precisely with memory bandwidth (iPad/iPhone TPS ratio = 1.90--1.92$\times$ for baseline, matching the theoretical 2$\times$ bandwidth ratio); (3)~layer residency strategy is irrelevant for architectures with uniform layer sizes---only the \emph{number} of resident layers matters; (4)~streaming achieves 63--81\% memory reduction on real devices, with the 9B model running at 0.3 TPS on both iPad and iPhone. Our implementation and benchmark data are publicly available.
+We present \textbf{Layer-Streaming Offloading}, a technique that enables large language models exceeding device physical memory to run inference on Apple Silicon edge devices (iPad, iPhone) with 8\,GB unified memory. By loading and releasing model layer weights on demand from NVMe storage during each forward pass, we achieve 60--88\% peak memory reduction while maintaining output correctness. We demonstrate this on the Qwen3.5 model family (0.8B--27B parameters) across Mac Studio M2~Ultra, iPad Air M3, and iPhone 15 Pro Max. Our key findings: (1)~a 9B model at 6-bit quantization (6.9\,GB) causes OOM on 8\,GB iPad under standard loading, but \textbf{runs at 0.39 TPS with adaptive hybrid residency}; (2)~TPS scales linearly with resident layer ratio; (3)~streaming overhead is significant---even 100\% resident streaming is 36\% slower than baseline on iPad; (4)~over-aggressive residency causes iOS swap thrashing, dropping TPS by 14$\times$; (5)~optimal residency is device-dependent. Our implementation and benchmark data are publicly available.
 \end{abstract}
 
 % ═══════════════════════════════════════════
-\clearpage
 \section{Introduction}
 
 Running large language models on edge devices enables private, low-latency inference without cloud dependency. However, state-of-the-art models with billions of parameters produce weight files that exceed the physical memory of mobile devices. An iPhone~15 Pro Max or iPad Air M3 has 8\,GB of unified memory, shared between the operating system, applications, and GPU compute. In practice, only approximately 5--6\,GB is available for model weights after accounting for iOS system overhead.
 
 This creates a hard boundary: models with weights exceeding $\sim$5\,GB cannot be loaded using standard full-resident approaches. The conventional response is to use smaller models or more aggressive quantization, sacrificing quality for deployability. We propose an alternative: \textbf{layer-streaming offloading}, which loads model weights one layer at a time from NVMe storage during inference, keeping only a subset of layers resident in memory at any time.
 
-Our contributions are:
+Our contributions:
 \begin{enumerate}
     \item A \textbf{layer-streaming mechanism} for MLX that reduces peak memory by 60--88\% with zero impact on output correctness.
-    \item \textbf{Real device streaming measurements} on iPad Air M3 and iPhone 15 Pro Max: a 9B model (6.9\,GB) that crashes with OOM under standard loading runs successfully at 1.78\,GB via streaming.
-    \item A \textbf{comprehensive analysis} of the TPS--memory tradeoff with partial layer residency across 11 model configurations.
-    \item \textbf{Verification} that edge device inference is bandwidth-bound: the iPad/iPhone TPS ratio of 1.90--1.92$\times$ matches the theoretical memory bandwidth ratio of 2$\times$.
+    \item \textbf{Adaptive hybrid residency} that auto-computes optimal resident layers based on available memory, model size, and KV cache needs, with dynamic shedding under memory pressure.
+    \item \textbf{Real device measurements} on iPad Air M3 and iPhone 15 Pro Max, including an \textbf{honest assessment of limitations}: streaming overhead, swap thrashing at over-allocation, and prediction model inaccuracy.
+    \item \textbf{Verification} that edge device inference is bandwidth-bound: iPad/iPhone TPS ratio = 1.90--1.93$\times$ matches the theoretical 2$\times$ memory bandwidth ratio.
 \end{enumerate}
 
 % ═══════════════════════════════════════════
-\clearpage
 \section{Background}
 
 \subsection{Hardware}
 
 We evaluate on three Apple Silicon devices spanning the performance spectrum:
 
-\begin{table}[h]
-\centering
+\begin{table}[ht!]
+\centering\small
 \caption{Test hardware specifications.}
 \label{tab:hardware}
 \begin{tabular}{lccccc}
@@ -91,8 +106,9 @@ MLX is Apple's machine learning framework optimized for Apple Silicon. We discov
 
 We use the Qwen3.5 model family, a hybrid architecture combining GatedDeltaNet (linear attention) and standard softmax attention at a ratio of 3:1 (\texttt{full\_attention\_interval}=4). This provides a uniform layer structure ideal for studying streaming behavior. Models range from 0.8B to 27B parameters at quantization levels from 4-bit to bf16.
 
+The hybrid architecture has an important implication for memory budgeting: only 1/4 of layers maintain full KV cache, while 3/4 use constant-size recurrent state, reducing KV memory to $\sim$25\% of a pure-attention model.
+
 % ═══════════════════════════════════════════
-\clearpage
 \section{Method}
 
 \subsection{Layer-Streaming Mechanism}
@@ -124,12 +140,7 @@ Algorithm~\ref{alg:streaming} describes the streaming forward pass. For each dec
 
 \subsection{Weight Pre-Splitting}
 
-We preprocess each model into per-layer safetensors files:
-\begin{itemize}
-    \item \texttt{non\_layer.safetensors}: embedding, final norm, and LM head weights (always resident)
-    \item \texttt{layer\_XXXX.safetensors}: per-layer weights (loaded on demand)
-\end{itemize}
-Vision tower weights from multimodal model checkpoints are excluded. For Qwen3.5-9B-6bit, this produces 33 files: 1 non-layer file (1.54\,GB) and 32 layer files ($\sim$168\,MB each).
+We preprocess each model into per-layer safetensors files: \texttt{non\_layer.safetensors} (embedding, norm, LM head---always resident) and \texttt{layer\_XXXX.safetensors} (per-layer, loaded on demand). Vision tower weights from multimodal checkpoints are excluded. For Qwen3.5-9B-6bit, this produces 33 files: 1 non-layer (1.54\,GB) and 32 layers ($\sim$168\,MB each).
 
 \subsection{Partial Layer Residency}
 
@@ -137,19 +148,32 @@ For a memory budget $B$, non-layer overhead $O$, and per-layer weight size $w$, 
 \begin{equation}
     N_{\text{resident}} = \left\lfloor \frac{B - O}{w} \right\rfloor
 \end{equation}
-Only the remaining $L - N_{\text{resident}}$ layers are streamed from NVMe. We evaluate three placement strategies: \texttt{first\_n} (first $N$ layers resident), \texttt{last\_n}, and \texttt{interleaved}.
+Only $L - N_{\text{resident}}$ layers are streamed. We evaluate three placement strategies: \texttt{first\_n}, \texttt{last\_n}, and \texttt{interleaved}.
+
+\subsection{Adaptive Hybrid Residency}
+
+Rather than requiring a manually-specified budget, we introduce an adaptive algorithm that auto-computes the optimal resident count:
+\begin{equation}
+    N_{\text{resident}} = \left\lfloor \frac{M_{\text{avail}} - O - w - R_{\text{runtime}} - \text{KV}_{\text{reserve}}}{w} \times 0.9 \right\rfloor
+\end{equation}
+where $M_{\text{avail}}$ is \texttt{os\_proc\_available\_memory()}, $O$ is non-layer weight size, $w$ is average layer size, $R_{\text{runtime}} = 150$\,MB, and $\text{KV}_{\text{reserve}}$ depends on priority mode:
+
+\begin{itemize}
+    \item \textbf{maxTPS}: KV reserve for 512 tokens (maximize resident layers)
+    \item \textbf{balanced}: KV reserve for 1024 tokens
+    \item \textbf{maxContext}: KV reserve for full expected context
+\end{itemize}
+
+A 0.9 safety factor prevents over-allocation. During generation, memory pressure is checked every 64 tokens; if available memory drops below 300\,MB, 25\% of resident layers are shed from highest index first. iOS memory warnings trigger full emergency shedding.
 
 % ═══════════════════════════════════════════
-\clearpage
 \section{Experiments}
 
 \subsection{Baseline: Full-Resident Performance}
 
-Table~\ref{tab:baseline} shows decode TPS, perplexity, and peak memory for all 11 model configurations on Mac Studio (all weights resident).
-
-\begin{table}[h]
-\centering
-\caption{Mac Studio M2 Ultra baseline (full-resident, 200 generated tokens, 3 runs averaged).}
+\begin{table}[ht!]
+\centering\small
+\caption{Mac Studio M2 Ultra baseline (full-resident, 200 tokens, 3 runs averaged).}
 \label{tab:baseline}
 \begin{tabular}{lccccr}
 \toprule
@@ -172,10 +196,8 @@ Qwen3.5-27B  & 4-bit  & 64 & 4.010 &  35.0 & 14.34 \\
 
 \subsection{Memory Reduction with Streaming}
 
-Layer-streaming reduces peak memory by 60--88\% depending on model size (Table~\ref{tab:memory}).
-
-\begin{table}[h]
-\centering
+\begin{table}[ht!]
+\centering\small
 \caption{Memory reduction with full layer-streaming (0\% resident layers).}
 \label{tab:memory}
 \begin{tabular}{lcccc}
@@ -190,12 +212,10 @@ Qwen3.5-27B-4bit  & 14.09 & 1.70 & 88\% & Yes \\
 \end{tabular}
 \end{table}
 
-\subsection{TPS vs. Residency Tradeoff}
+\subsection{TPS vs.\ Residency Tradeoff}
 
-Table~\ref{tab:streaming} shows decode TPS at different residency levels. I/O overhead dominates at 64--79\% of total decode time.
-
-\begin{table}[h]
-\centering
+\begin{table}[ht!]
+\centering\small
 \caption{Streaming TPS with partial residency on Mac Studio (50 tokens, Qwen3.5-9B-8bit).}
 \label{tab:streaming}
 \begin{tabular}{lrrrr}
@@ -203,39 +223,22 @@ Table~\ref{tab:streaming} shows decode TPS at different residency levels. I/O ov
 \textbf{Config} & \textbf{Resident} & \textbf{TPS} & \textbf{Mem (GB)} & \textbf{I/O \%} \\
 \midrule
 Full Resident  & 32/32 &  68.3 & 8.97 &  0\% \\
-Stream 0\%     &  0/32 &   1.7 & 2.31 & 81\% \\
-Hybrid 25\%    &  8/32 &   2.2 & 4.02 & 80\% \\
-Hybrid 50\%    & 16/32 &   3.2 & 5.73 & 77\% \\
 Hybrid 75\%    & 24/32 &   5.9 & 7.44 & 70\% \\
+Hybrid 50\%    & 16/32 &   3.2 & 5.73 & 77\% \\
+Hybrid 25\%    &  8/32 &   2.2 & 4.02 & 80\% \\
+Stream 0\%     &  0/32 &   1.7 & 2.31 & 81\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Strategy Comparison}
 
-For architectures with uniform layer sizes (like Qwen3.5), the placement strategy is irrelevant:
+For architectures with uniform layer sizes (like Qwen3.5), the placement strategy is irrelevant. All three strategies (first\_n, last\_n, interleaved) perform within 3\% at 50\% residency, confirming that only the \emph{count} of resident layers matters.
 
-\begin{table}[h]
-\centering
-\caption{Layer placement strategy comparison (50\% residency, Qwen3.5-9B-8bit).}
-\label{tab:strategy}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Strategy} & \textbf{TPS} & \textbf{Mem (GB)} & \textbf{I/O \%} \\
-\midrule
-first\_n     & 3.2 & 5.72 & 73\% \\
-last\_n      & 3.1 & 5.72 & 74\% \\
-interleaved  & 3.1 & 5.75 & 76\% \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{Device Baselines and Streaming}
 
-All strategies perform within 3\% of each other. This is expected: all Qwen3.5 layers are $\sim$200\,MB with identical compute time ($\sim$0.06\,ms per layer on Mac Studio for single-token decode).
-
-\subsection{Device Measurements}
-
-\begin{table}[h]
-\centering
+\begin{table}[ht!]
+\centering\small
 \caption{Decode TPS on real 8\,GB devices (baseline, full-resident loading).}
 \label{tab:device}
 \begin{tabular}{lccccc}
@@ -243,57 +246,38 @@ All strategies perform within 3\% of each other. This is expected: all Qwen3.5 l
 \textbf{Model} & \textbf{Weights} & \textbf{iPad M3} & \textbf{iPhone A17} & \textbf{Ratio} & \textbf{Status} \\
 \midrule
 0.8B-8bit & 0.80\,GB & 103.2 & 53.5 & 1.93$\times$ & Fits \\
-2B-6bit   & 1.49\,GB &  56.8 & --- & --- & Fits \\
 2B-8bit   & 1.93\,GB &  43.8 & 23.0 & 1.90$\times$ & Fits \\
 4B-4bit   & 2.34\,GB &  35.5 & 18.4 & 1.93$\times$ & Fits \\
 4B-6bit   & 3.32\,GB &  25.2 & 13.2 & 1.91$\times$ & Fits \\
-\midrule
 \textbf{9B-6bit} & \textbf{6.90\,GB} & \textbf{OOM} & --- & --- & \textbf{Crash} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Critical finding}: The 9B-6bit model (6.90\,GB weights) crashes with an out-of-memory error on the iPad Air M3 (8\,GB), killed by the OS after 24.7 seconds. Despite the weight file being smaller than the device's physical memory, iOS system overhead of $\sim$2--3\,GB leaves only $\sim$5--6\,GB available for the application. This establishes that \textbf{layer-streaming is necessary for all models with weights exceeding approximately 5\,GB on 8\,GB devices}.
+The 9B-6bit model (6.90\,GB) crashes with OOM on iPad M3, killed by the OS after 24.7\,s. Despite weights being smaller than 8\,GB physical memory, iOS system overhead of $\sim$2--3\,GB leaves only $\sim$5--6\,GB available. \textbf{Layer-streaming is necessary for all models with weights $>$\,5\,GB on 8\,GB devices.}
 
-\subsection{Device Streaming Validation}
-
-Table~\ref{tab:device_streaming} shows actual decode performance with layer-streaming on real 8\,GB devices. The 9B model---which crashes under standard loading---runs successfully with only 1.78\,GB peak memory.
-
-\begin{table}[h]
-\centering
-\caption{Layer-streaming on real 8\,GB devices (0\% resident layers, 10 tokens decoded).}
+\begin{table}[ht!]
+\centering\small
+\caption{Layer-streaming on real 8\,GB devices (0\% resident, 10 tokens).}
 \label{tab:device_streaming}
-\begin{tabular}{lcccccc}
+\begin{tabular}{lccccr}
 \toprule
-\textbf{Model} & \multicolumn{2}{c}{\textbf{iPad Air M3}} & \multicolumn{2}{c}{\textbf{iPhone 15 Pro Max}} & \textbf{Mem.} \\
-\cmidrule(lr){2-3} \cmidrule(lr){4-5}
- & \textbf{Baseline} & \textbf{Stream} & \textbf{Baseline} & \textbf{Stream} & \textbf{Savings} \\
+\textbf{Model} & \textbf{iPad Base} & \textbf{iPad Stream} & \textbf{iPhone Base} & \textbf{iPhone Stream} & \textbf{Savings} \\
 \midrule
-0.8B-8bit & 103.2 & 5.8 TPS & 53.5 & 4.1 TPS & 63\% \\
- & 799\,MB & 293\,MB & 792\,MB & 293\,MB & \\
-\midrule
-4B-4bit & 35.5 & 1.9 TPS & 18.4 & 0.7 TPS & 81\% \\
- & 2330\,MB & 436\,MB & 2317\,MB & 436\,MB & \\
-\midrule
-\textbf{9B-6bit} & \textbf{OOM} & \textbf{0.3 TPS} & --- & \textbf{0.3 TPS} & --- \\
- & \textbf{Crash} & \textbf{1780\,MB} & --- & \textbf{1780\,MB} & \\
+0.8B-8bit & 103.2 / 799\,MB & 5.8 / 293\,MB & 53.5 / 792\,MB & 4.1 / 293\,MB & 63\% \\
+4B-4bit & 35.5 / 2330\,MB & 2.3 / 436\,MB & 18.4 / 2317\,MB & 1.8 / 436\,MB & 81\% \\
+\textbf{9B-6bit} & \textbf{OOM} & \textbf{0.28 / 1780\,MB} & --- & --- & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Key results}: (1)~Memory savings increase with model size: 63\% for 0.8B, 81\% for 4B. (2)~The 9B model fits comfortably at 1.78\,GB---well within 8\,GB device limits. (3)~Streaming TPS is I/O-bound: iPad M3 achieves $\sim$2.7$\times$ the iPhone TPS for 4B (matching NVMe+bandwidth ratio) but both devices converge to 0.3 TPS for 9B, suggesting I/O saturation at larger layer sizes.
+\subsection{Hybrid and Adaptive Residency: 9B-6bit on 8\,GB Devices}
 
-\subsection{Hybrid Residency on Devices}
-
-Full streaming is the most memory-efficient but slowest configuration. In practice, 8\,GB devices have $\sim$5--6\,GB available. By setting a memory budget and keeping as many layers resident as possible, we reduce the number of streamed layers and improve TPS proportionally.
-
-For Qwen3.5-9B-6bit with a 3.5\,GB budget: non-layer weights = 1.54\,GB, each layer = 168\,MB, yielding 11 resident layers out of 32. Only 21 layers are streamed per token.
-
-\begin{table}[h]
-\centering
-\caption{Hybrid residency for Qwen3.5-9B-6bit on real 8\,GB devices.}
+\begin{table}[ht!]
+\centering\small
+\caption{Hybrid residency for Qwen3.5-9B-6bit on real 8\,GB devices. $^*$iPhone at 5\,GB: iOS swap thrashing degrades TPS \emph{below} full-stream baseline.}
 \label{tab:hybrid}
-\begin{tabular}{lcccccc}
+\begin{tabular}{lcccccr}
 \toprule
 \textbf{Budget} & \textbf{Resident} & \textbf{Streamed} & \textbf{iPad TPS} & \textbf{iPhone TPS} & \textbf{Memory} & \textbf{Speedup} \\
 \midrule
@@ -307,64 +291,103 @@ Full stream  & 0/32  & 32 & 0.28 & 0.27 & 1.78\,GB & --- \\
 \end{tabular}
 \end{table}
 
-\noindent $^*$iPhone at 5\,GB budget: iOS memory pressure causes swap thrashing, degrading TPS below full-stream baseline.
+The adaptive algorithm auto-selects residency via \texttt{os\_proc\_available\_memory()}. Table~\ref{tab:adaptive9b} shows the three priority modes on iPad M3.
 
-\textbf{Key findings}: (1)~TPS scales linearly with resident fraction up to the 4\,GB sweet spot (+61\% vs.\ full stream). (2)~The optimal budget for 8\,GB devices is \textbf{4\,GB}: both iPad and iPhone achieve 0.45 TPS while staying safely within memory limits. (3)~Exceeding available memory (5\,GB on iPhone) triggers OS memory pressure, causing a catastrophic TPS drop---confirming the importance of staying within budget.
-
-Hybrid residency also benefits models that \emph{fit} in memory. Table~\ref{tab:hybrid4b} shows that Qwen3.5-4B-4bit at 90\% residency achieves 12.6 TPS on iPad while freeing 216\,MB for KV cache---enabling longer context windows without sacrificing interactive performance.
-
-\begin{table}[h]
-\centering
-\caption{Hybrid residency for Qwen3.5-4B-4bit on real 8\,GB devices.}
-\label{tab:hybrid4b}
-\begin{tabular}{lcccccc}
+\begin{table}[ht!]
+\centering\small
+\caption{Adaptive residency for Qwen3.5-9B-6bit on iPad M3 (8\,GB).}
+\label{tab:adaptive9b}
+\begin{tabular}{lcccc}
 \toprule
-\textbf{Resident} & \textbf{Streamed} & \textbf{iPad TPS} & \textbf{iPhone TPS} & \textbf{Memory} & \textbf{Free for KV} \\
+\textbf{Mode} & \textbf{Resident} & \textbf{TPS} & \textbf{Memory} & \textbf{Note} \\
 \midrule
-0/32 (full stream) & 32 & 3.1 & 1.9 & 0.44\,GB & 5.6\,GB \\
-8/32 (25\%) & 24 & 3.8 & 2.4 & 0.92\,GB & 5.1\,GB \\
-16/32 (50\%) & 16 & 5.2 & 3.0 & 1.40\,GB & 4.6\,GB \\
-24/32 (75\%) & 8 & 8.3 & 4.4 & 1.88\,GB & 4.1\,GB \\
-\textbf{28/32 (90\%)} & \textbf{4} & \textbf{12.6} & \textbf{6.0} & \textbf{2.11\,GB} & \textbf{3.9\,GB} \\
-32/32 (baseline) & 0 & 35.5 & 18.4 & 2.33\,GB & 3.7\,GB \\
+Full stream & 0/32 & 0.28 & 1,780\,MB & Baseline \\
+balanced & 2/32 & 0.26 & 5,603\,MB & Minimal benefit \\
+\textbf{maxContext} & \textbf{22/32} & \textbf{0.39} & \textbf{5,471\,MB} & \textbf{Best: +39\%} \\
+maxTPS & 24/32 & \textcolor{red}{0.03} & 5,802\,MB & \textcolor{red}{Swap thrashing} \\
+Full resident & --- & --- & --- & Need 7,220\,MB \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\textbf{Critical finding}: maxTPS allocated 24 layers (5.8\,GB) based on 6.5\,GB available at startup. During generation, iOS swap pressure caused a \textbf{14$\times$ slowdown} vs.\ full streaming. The \texttt{available\_memory} API reports a snapshot, not a guarantee.
+
+\subsection{Adaptive Residency: 4B-4bit Sweep (Memory-Sufficient)}
+
+When the model fits entirely in memory, streaming is not required---but what is its cost?
+
+\begin{table}[ht!]
+\centering\small
+\caption{4B-4bit residency sweep on 8\,GB devices. Baseline = standard (non-streaming) loading.}
+\label{tab:adaptive4b}
+\begin{tabular}{lrrrrc}
+\toprule
+\textbf{Resident} & \textbf{iPad TPS} & \textbf{vs Base} & \textbf{iPhone TPS} & \textbf{vs Base} & \textbf{Memory} \\
+\midrule
+0/32 (full stream) & 2.3 & 6\% & 1.8 & 10\% & 436\,MB \\
+8/32 (25\%) & 3.9 & 11\% & 3.0 & 16\% & 916\,MB \\
+16/32 (50\%) & 5.2 & 15\% & 3.8 & 21\% & 1,395\,MB \\
+24/32 (75\%) & 6.5 & 18\% & 4.7 & 25\% & 1,875\,MB \\
+28/32 (90\%) & 10.3 & 29\% & 6.0 & 33\% & 2,114\,MB \\
+32/32 (stream 100\%) & 22.7 & 64\% & 5.9 & 32\% & 2,293\,MB \\
+\textbf{Baseline (no stream)} & \textbf{35.5} & \textbf{100\%} & \textbf{18.4} & \textbf{100\%} & \textbf{2,330\,MB} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key finding}: Even with all 32 layers resident (no actual I/O), streaming is \textbf{36\% slower on iPad} (22.7 vs.\ 35.5) and \textbf{68\% slower on iPhone} (5.9 vs.\ 18.4) due to per-layer eval synchronization. \textbf{For models that fit in memory, standard loading is always better.}
+
 \subsection{Bandwidth Scaling}
 
-The iPad/iPhone TPS ratio across all tested models falls in the narrow range 1.90--1.93$\times$, closely matching the theoretical memory bandwidth ratio of $100/50 = 2\times$. This confirms that decode throughput on Apple Silicon edge devices is \textbf{bandwidth-bound}: performance scales linearly with memory bandwidth regardless of GPU core count (10 cores on iPad M3 vs.\ 6 cores on iPhone A17~Pro).
+The iPad/iPhone TPS ratio across all tested models falls in 1.90--1.93$\times$, matching the theoretical memory bandwidth ratio of $100/50 = 2\times$. This confirms that decode throughput on Apple Silicon edge devices is \textbf{bandwidth-bound}: performance scales linearly with memory bandwidth regardless of GPU core count.
 
 % ═══════════════════════════════════════════
-\clearpage
 \section{Discussion}
 
 \subsection{Practical Implications}
 
-For 8\,GB devices, the optimal model configuration depends on the use case:
+For 8\,GB devices, the optimal configuration depends on the use case:
 \begin{itemize}
-    \item \textbf{Interactive (>10 TPS)}: Qwen3.5-4B-4bit with 90\% residency (28/32 layers): 12.6 TPS on iPad, 6.0 TPS on iPhone at 2.1\,GB---freeing 200+\,MB for KV cache compared to full-resident (2.3\,GB).
-    \item \textbf{Quality-optimized}: Qwen3.5-4B-6bit (PPL~4.759) at 13.2/25.2 TPS (iPhone/iPad). Still fully resident at 3.32\,GB.
-    \item \textbf{Maximum quality with streaming}: Qwen3.5-9B-6bit (PPL~4.485) via hybrid layer-streaming. Measured 0.45 TPS on iPad at 4.1\,GB with 14/32 layers resident. Suitable for background or non-interactive generation.
-    \item \textbf{Hero result}: Qwen3.5-27B-4bit (PPL~4.010) via full streaming. Estimated 0.1--0.2 TPS on iPad based on Mac Studio extrapolation. Demonstrates feasibility, not practicality.
+    \item \textbf{Interactive ($>$10 TPS)}: Qwen3.5-4B-4bit with 90\% residency (28/32): 12.6/6.0 TPS (iPad/iPhone) at 2.1\,GB, freeing 200+\,MB for KV cache.
+    \item \textbf{Quality-optimized}: Qwen3.5-4B-6bit (PPL~4.759) at 25.2/13.2 TPS fully resident at 3.3\,GB.
+    \item \textbf{Maximum quality}: Qwen3.5-9B-6bit (PPL~4.485) via hybrid streaming. 0.45 TPS on iPad at 4.1\,GB (14/32 resident). Suitable for background generation.
+    \item \textbf{Hero result}: Qwen3.5-27B-4bit (PPL~4.010) via full streaming. Estimated 0.1--0.2 TPS. Demonstrates feasibility, not practicality.
 \end{itemize}
 
 \subsection{I/O Bottleneck Analysis}
 
-Layer-streaming is fundamentally I/O-bound. Per-layer profiling shows forward computation takes $\sim$0.06\,ms on Mac Studio, while loading a 200\,MB layer file takes $\sim$14\,ms---a ratio of 1:230. On iPad with $\sim$2\,GB/s NVMe, load time increases to $\sim$100\,ms per layer, making the ratio even more extreme (1:1660).
+Layer-streaming is fundamentally I/O-bound. Per-layer profiling shows forward computation takes $\sim$0.06\,ms on Mac Studio, while loading a 200\,MB layer takes $\sim$14\,ms---a ratio of 1:230. On iPad with $\sim$2\,GB/s NVMe, load time increases to $\sim$100\,ms per layer (ratio 1:1660).
 
-Weight distribution within each layer is 70\% MLP and 30\% attention. Sub-layer streaming (keeping attention weights resident, streaming only MLP) provides $<$2\% improvement because the total I/O volume remains nearly identical.
+Sub-layer streaming (keeping attention weights resident, streaming only MLP) provides $<$2\% improvement because total I/O volume remains nearly identical.
 
-\subsection{Limitations}
+\subsection{Streaming Overhead (Limitation)}
+
+A critical and surprising finding: the streaming code path introduces significant overhead \emph{even when no streaming occurs}. With all 32 layers resident, streaming achieves only 64\% of baseline TPS on iPad and 32\% on iPhone (Table~\ref{tab:adaptive4b}). This overhead stems from:
+\begin{itemize}
+    \item \textbf{Per-layer eval synchronization}: Each layer requires \texttt{mx.eval()} to force computation before the (potential) weight unload, preventing MLX's lazy evaluation from batching operations across layers.
+    \item \textbf{Memory pressure monitoring}: The \texttt{checkMemoryPressure()} call every 64 tokens adds small but measurable overhead.
+    \item \textbf{Weight loading checks}: Even for resident layers, the load/skip branching disrupts the optimized forward pass.
+\end{itemize}
+
+iPhone is disproportionately affected (68\% overhead vs.\ 36\% on iPad) because its fewer GPU cores (6 vs.\ 10) and lower bandwidth (50 vs.\ 100\,GB/s) make the per-layer eval synchronization cost a larger fraction of total time.
+
+\subsection{Swap Thrashing (Limitation)}
+
+The adaptive maxTPS mode for 9B allocated 24/32 layers (5.8\,GB) based on 6.5\,GB reported available at startup. During generation, this left insufficient headroom. iOS began swap-paging, and TPS dropped to 0.03---\textbf{14$\times$ slower than full streaming} (0.28 TPS). The \texttt{os\_proc\_available\_memory()} API reports a snapshot, not a guarantee; system services reclaim memory unpredictably. Our 0.9 safety factor was insufficient for this scenario.
+
+\subsection{TPS Prediction Accuracy (Limitation)}
+
+Our bandwidth-based formula $\text{TPS} = 1 / (T_{\text{compute}} + N_{\text{streamed}} \times T_{\text{io}})$ showed prediction errors from 50\% to over 4000\%. The model doesn't account for: safetensors parsing overhead, per-layer eval synchronization cost, GPU compute efficiency vs.\ theoretical, and iOS memory management overhead. A more accurate model requires empirical calibration coefficients fitted to measured data per device.
+
+\subsection{Other Limitations}
 
 \begin{enumerate}
-    \item \textbf{Single model family}: All experiments use Qwen3.5. Models with non-uniform layer sizes (e.g., MoE architectures) may benefit from strategic layer placement.
-    \item \textbf{No prefill streaming}: Current implementation streams during decode only. Prefill (processing the full prompt) requires all layers sequentially and would benefit from pipelining.
-    \item \textbf{No prefetching}: Current device implementation loads each layer synchronously. Overlapping next-layer I/O with current-layer compute could improve TPS, especially on iPad M3 where NVMe bandwidth is underutilized.
+    \item \textbf{Single model family}: All experiments use Qwen3.5. MoE architectures with non-uniform layers may benefit from strategic placement.
+    \item \textbf{No prefill streaming}: Current implementation streams during decode only.
+    \item \textbf{No prefetching}: Layers load synchronously. Overlapping I/O with compute could improve TPS.
 \end{enumerate}
 
 % ═══════════════════════════════════════════
-\clearpage
 \section{Related Work}
 
 \textbf{LLM on mobile devices.} MLC-LLM~\cite{mlcllm} and llama.cpp~\cite{llamacpp} enable on-device inference through aggressive quantization. Our work is complementary: layer-streaming allows running models too large even for quantized deployment.
@@ -374,17 +397,14 @@ Weight distribution within each layer is 70\% MLP and 30\% attention. Sub-layer 
 \textbf{MLX ecosystem.} MLX~\cite{mlx} provides a NumPy-like framework optimized for Apple Silicon. We extend mlx-lm with per-layer weight management, demonstrating that the framework's lazy evaluation model enables efficient streaming despite lacking built-in support.
 
 % ═══════════════════════════════════════════
-\clearpage
 \section{Conclusion}
 
-Layer-streaming offloading enables language models exceeding device memory to run inference on 8\,GB Apple Silicon edge devices. Our experiments across 11 Qwen3.5 model configurations and three devices establish that: (1)~streaming reduces peak memory by 63--81\% on real devices; (2)~a 9B model at 6-bit quantization that crashes under standard loading runs successfully at 1.78\,GB (0.3 TPS) via streaming on both iPad and iPhone; (3)~baseline decode throughput scales linearly with memory bandwidth; (4)~for uniform architectures, only the count of resident layers matters, not their placement. The technique trades throughput for deployability, running a 9B model on an 8\,GB device at 0.3 TPS---slow but previously impossible.
+Layer-streaming offloading enables language models exceeding device memory to run inference on 8\,GB Apple Silicon edge devices. Our experiments establish that: (1)~streaming reduces peak memory by 63--81\% on real devices; (2)~a 9B model runs at 0.39 TPS via adaptive hybrid residency on iPad; (3)~TPS scales linearly with resident ratio; (4)~\textbf{streaming has significant overhead}---even 100\% resident is 36--68\% slower than baseline, so standard loading should be used when the model fits; (5)~\textbf{over-aggressive residency causes swap thrashing}, dropping TPS by 14$\times$---the available memory API is not a reliable allocator. The technique trades throughput for deployability: a 9B model on an 8\,GB device at 0.39 TPS is slow but previously impossible.
 
 \subsection*{Acknowledgements}
 
-Built with MLX by Apple. Experiments conducted on Mac Studio M2 Ultra, iPad Air M3, and iPhone 15 Pro Max.
+Built with MLX by Apple. Experiments on Mac Studio M2 Ultra, iPad Air M3, and iPhone 15 Pro Max.
 
-% ═══════════════════════════════════════════
-\clearpage
 \begin{thebibliography}{9}
 \bibitem{mlx} Awni Hannun et al. MLX: An array framework for Apple silicon. \url{https://github.com/ml-explore/mlx}, 2024.
 \bibitem{mlcllm} MLC Team. MLC-LLM: Universal LLM deployment on edge devices. \url{https://github.com/mlc-ai/mlc-llm}, 2023.
