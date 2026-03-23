@@ -93,6 +93,27 @@ class BenchmarkViewModel: ObservableObject {
     private var modelName: String = "unknown"
     private var loadTimeSeconds: Double = 0
     private var isStreamingMode = false
+    private var memoryWarningObserver: Any?
+
+    deinit {
+        if let obs = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
+    /// Register for iOS memory warning → shed all resident layers.
+    private func registerMemoryWarning() {
+        #if os(iOS)
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let engine = self?.streamingEngine else { return }
+            streamLog("[APP] Memory warning received! Shedding all resident layers")
+            engine.shedAllResidentLayers()
+        }
+        #endif
+    }
 
     func loadModel() async {
         isRunning = true
@@ -130,6 +151,7 @@ class BenchmarkViewModel: ObservableObject {
                 let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
                 status = "Streaming: \(modelName) (\(String(format: "%.0f", loadMemMB)) MB)"
                 modelLoaded = true
+                registerMemoryWarning()
                 streamLog("Streaming model loaded: \(modelName), \(String(format: "%.0f", loadMemMB)) MB, \(String(format: "%.1f", loadTimeSeconds))s")
             } catch {
                 status = "Streaming load failed: \(error)"
@@ -171,6 +193,10 @@ class BenchmarkViewModel: ObservableObject {
         let baseConfig = try JSONDecoder.json5().decode(BaseConfiguration.self, from: configData)
         streamLog("Model type: \(baseConfig.modelType)")
 
+        // 1b. Parse KV cache config from config.json
+        let kvConfig = parseKVConfig(configData: configData)
+        streamLog("KV config: kvHeads=\(kvConfig.numKeyValueHeads), headDim=\(kvConfig.headDim), fullAttnInterval=\(kvConfig.fullAttentionInterval), bytesPerToken=\(kvConfig.kvBytesPerToken)")
+
         // 2. Create model architecture via type registry
         let model = try await LLMTypeRegistry.shared.createModel(
             configuration: configData, modelType: baseConfig.modelType)
@@ -204,14 +230,39 @@ class BenchmarkViewModel: ObservableObject {
         let infoData = try Data(contentsOf: modelDir.appendingPathComponent("streaming_info.json"))
         let info = try JSONSerialization.jsonObject(with: infoData) as! [String: Any]
         let numLayers = info["num_layers"] as! Int
+        let avgLayerBytes = info["avg_layer_bytes"] as? Int ?? 0
+        let nonLayerBytes = info["non_layer_size_bytes"] as? Int ?? 0
         streamLog("Streaming info: \(numLayers) layers")
 
-        // 6. Create streaming engine directly (no ModelContainer needed)
+        // 6. Create streaming engine with adaptive config
         let engine = StreamingEngine(
             modelDir: modelDir,
             numLayers: numLayers,
             model: model)
+        engine.kvConfig = kvConfig
+        engine.avgLayerMB = avgLayerBytes / (1024 * 1024)
+        engine.nonLayerMB = nonLayerBytes / (1024 * 1024)
         self.streamingEngine = engine
+    }
+
+    /// Parse KV cache parameters from model config.json.
+    private func parseKVConfig(configData: Data) -> KVCacheConfig {
+        guard let json = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
+            return .unknown
+        }
+        let numKVHeads = json["num_key_value_heads"] as? Int ?? json["num_attention_heads"] as? Int ?? 0
+        let headDim = json["head_dim"] as? Int ?? {
+            let hiddenSize = json["hidden_size"] as? Int ?? 0
+            let numHeads = json["num_attention_heads"] as? Int ?? 1
+            return hiddenSize / numHeads
+        }()
+        let numLayers = json["num_hidden_layers"] as? Int ?? 0
+        let fullAttnInterval = json["full_attention_interval"] as? Int ?? 0
+        return KVCacheConfig(
+            numKeyValueHeads: numKVHeads,
+            headDim: headDim,
+            numLayers: numLayers,
+            fullAttentionInterval: fullAttnInterval)
     }
 
     func runBenchmark() async {
@@ -307,75 +358,138 @@ class BenchmarkViewModel: ObservableObject {
         results = []
         let maxTokens = 10
 
-        // Read streaming info for hybrid calculation
-        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let modelDir = docsURL.appendingPathComponent("model")
-        var avgLayerMB = 0
-        var nonLayerMB = 0
-        if let infoData = try? Data(contentsOf: modelDir.appendingPathComponent("streaming_info.json")),
-           let info = try? JSONSerialization.jsonObject(with: infoData) as? [String: Any] {
-            avgLayerMB = (info["avg_layer_bytes"] as? Int ?? 0) / (1024 * 1024)
-            nonLayerMB = (info["non_layer_size_bytes"] as? Int ?? 0) / (1024 * 1024)
-        }
-
-        // Run 1: Full streaming (0% resident)
-        status = "Stream (full)..."
-        streamLog("=== Full streaming ===")
-        engine.residentLayers = []
-        let (tps1, peak1, load1) = runStreamingPass(engine, maxTokens: maxTokens, label: "Full stream")
-        streamLog(String(format: "Full stream: %.2f TPS, %.0f MB, load=%.0fms/layer", tps1, peak1, load1))
-        results.append(BenchmarkResult(
-            label: "Full stream", avgTPS: tps1, promptTPS: 0,
-            allTPS: [tps1], tokenCount: maxTokens,
-            peakMemoryMB: peak1, loadTimeSeconds: loadTimeSeconds))
-
-        // Run 2-N: Hybrid at multiple budget levels (adaptive to model size)
+        let avgLayerMB = engine.avgLayerMB
+        let nonLayerMB = engine.nonLayerMB
         let totalModelMB = nonLayerMB + avgLayerMB * engine.numLayers
-        // Generate budgets from ~non_layer to ~total, covering 25/50/60/75/90% of model
-        let budgets: [Int]
-        if totalModelMB > 4000 {
-            // Large model (9B+): use absolute budgets relevant to 8GB devices
-            budgets = [2000, 3000, 3500, 4000, 5000]
-        } else {
-            // Smaller model (4B, 2B): use fractions of total model size
-            budgets = [
-                nonLayerMB + avgLayerMB * (engine.numLayers / 4),      // 25% resident
-                nonLayerMB + avgLayerMB * (engine.numLayers / 2),      // 50% resident
-                nonLayerMB + avgLayerMB * (engine.numLayers * 3 / 4),  // 75% resident
-                nonLayerMB + avgLayerMB * (engine.numLayers * 9 / 10), // 90% resident
-            ]
-        }
-        streamLog("Model: \(totalModelMB)MB, non_layer=\(nonLayerMB)MB, avg_layer=\(avgLayerMB)MB, budgets=\(budgets)")
-        for budgetMB in budgets {
-            let residentCount = StreamingEngine.computeResidentCount(
-                budgetMB: budgetMB, nonLayerMB: nonLayerMB,
-                avgLayerMB: avgLayerMB, numLayers: engine.numLayers)
+        let availableAtStartMB = Int(getAvailableMemoryBytes() / (1024 * 1024))
 
-            guard residentCount > 0 && residentCount < engine.numLayers else { continue }
+        // Device hardware params for TPS prediction
+        #if os(iOS)
+        let memBandwidthGBps: Double = 100.0  // Conservative for M-series iPad/iPhone
+        let nvmeBandwidthGBps: Double = 2.0
+        #else
+        let memBandwidthGBps: Double = 800.0  // Mac Studio M2 Ultra
+        let nvmeBandwidthGBps: Double = 7.4
+        #endif
 
-            // Skip if same resident count as previous budget
-            if let prev = results.last, prev.label.contains("/\(engine.numLayers))") {
-                let prevCount = Int(prev.label.components(separatedBy: "(").last?.components(separatedBy: "/").first ?? "0") ?? 0
-                if prevCount == residentCount { continue }
+        streamLog("=== Adaptive Hybrid Residency Benchmark ===")
+        streamLog("Model: \(totalModelMB)MB, non_layer=\(nonLayerMB)MB, avg_layer=\(avgLayerMB)MB")
+        streamLog("Device available memory: \(availableAtStartMB)MB")
+        streamLog("KV config: bytesPerToken=\(engine.kvConfig.kvBytesPerToken), fullAttnInterval=\(engine.kvConfig.fullAttentionInterval)")
+
+        // Run 1: Full streaming (0% resident) — baseline
+        status = "Stream (full)..."
+        streamLog("--- Full streaming (0% resident) ---")
+        engine.residentLayers = []
+        let (tps0, peak0, load0) = runStreamingPass(engine, maxTokens: maxTokens, label: "Full stream")
+        let pred0 = StreamingEngine.predictTPS(numLayers: engine.numLayers, residentCount: 0,
+            avgLayerMB: avgLayerMB, totalModelMB: totalModelMB,
+            memBandwidthGBps: memBandwidthGBps, nvmeBandwidthGBps: nvmeBandwidthGBps)
+        streamLog(String(format: "Full stream: actual=%.2f TPS, predicted=%.2f TPS, %.0f MB, load=%.0fms/layer", tps0, pred0, peak0, load0))
+        results.append(BenchmarkResult(
+            label: "Full stream (predicted \(String(format: "%.1f", pred0)))", avgTPS: tps0, promptTPS: 0,
+            allTPS: [tps0], tokenCount: maxTokens,
+            peakMemoryMB: peak0, loadTimeSeconds: loadTimeSeconds))
+
+        // Run 2-4: Adaptive modes — maxTPS, balanced, maxContext
+        var seenCounts = Set<Int>()
+        seenCounts.insert(0)  // already ran full streaming
+
+        for priority in AdaptiveResidencyConfig.Priority.allCases {
+            let config = AdaptiveResidencyConfig(priority: priority)
+            let (residentCount, kvReserveMB, layerBudgetMB, availMB) = StreamingEngine.computeOptimalResidency(
+                config: config,
+                numLayers: engine.numLayers,
+                avgLayerMB: avgLayerMB,
+                nonLayerMB: nonLayerMB,
+                kvConfig: engine.kvConfig)
+
+            // Skip duplicate counts
+            if seenCounts.contains(residentCount) {
+                streamLog("--- \(priority.rawValue): \(residentCount)/\(engine.numLayers) (same as previous, skipping) ---")
+                continue
+            }
+            seenCounts.insert(residentCount)
+
+            // Skip if no layers can be resident
+            guard residentCount > 0 else {
+                streamLog("--- \(priority.rawValue): 0 resident (not enough memory, skipping) ---")
+                continue
             }
 
-            status = "Hybrid \(residentCount)/\(engine.numLayers) (\(budgetMB)MB)..."
-            streamLog("=== Hybrid: \(residentCount)/\(engine.numLayers) resident, budget=\(budgetMB)MB ===")
+            let pct = residentCount * 100 / engine.numLayers
+            status = "\(priority.rawValue): \(residentCount)/\(engine.numLayers) (\(pct)%)..."
+            streamLog("--- \(priority.rawValue): \(residentCount)/\(engine.numLayers) resident, kvReserve=\(kvReserveMB)MB, layerBudget=\(layerBudgetMB)MB, avail=\(availMB)MB ---")
+
             engine.setupResidentLayers(count: residentCount)
-            let (tps, peak, load) = runStreamingPass(engine, maxTokens: maxTokens, label: "Hybrid(\(budgetMB)MB)")
-            let streamed = engine.numLayers - residentCount
-            streamLog(String(format: "Hybrid(%d/%d, %dMB): %.2f TPS, %.0f MB, load=%.0fms/layer (%d streamed)",
-                             residentCount, engine.numLayers, budgetMB, tps, peak, load, streamed))
+            let (tps, peak, load) = runStreamingPass(engine, maxTokens: maxTokens, label: "\(priority.rawValue)")
+            let predTPS = StreamingEngine.predictTPS(numLayers: engine.numLayers, residentCount: residentCount,
+                avgLayerMB: avgLayerMB, totalModelMB: totalModelMB,
+                memBandwidthGBps: memBandwidthGBps, nvmeBandwidthGBps: nvmeBandwidthGBps)
+            let error = tps > 0 ? abs(predTPS - tps) / tps * 100 : 0
+
+            streamLog(String(format: "%@(%d/%d): actual=%.2f TPS, predicted=%.2f TPS (err=%.0f%%), %.0f MB, load=%.0fms/layer",
+                             priority.rawValue, residentCount, engine.numLayers, tps, predTPS, error, peak, load))
             results.append(BenchmarkResult(
-                label: "Hybrid(\(residentCount)/\(engine.numLayers))", avgTPS: tps, promptTPS: 0,
+                label: "\(priority.rawValue)(\(residentCount)/\(engine.numLayers), pred \(String(format: "%.1f", predTPS)))",
+                avgTPS: tps, promptTPS: 0,
                 allTPS: [tps], tokenCount: maxTokens,
                 peakMemoryMB: peak, loadTimeSeconds: loadTimeSeconds))
         }
 
+        // Run 5: Full resident (100%) — only if model fits in memory
+        if !seenCounts.contains(engine.numLayers) {
+            let fullResidentMB = nonLayerMB + avgLayerMB * engine.numLayers
+            let currentAvailMB = Int(getAvailableMemoryBytes() / (1024 * 1024))
+            let safeThreshold = fullResidentMB + 300 // need 300MB headroom
+
+            if currentAvailMB > safeThreshold || totalModelMB < 5000 {
+                status = "Full resident (\(engine.numLayers)/\(engine.numLayers))..."
+                streamLog("--- Full resident (100%) ---")
+                engine.setupResidentLayers(count: engine.numLayers)
+                let (tps, peak, load) = runStreamingPass(engine, maxTokens: maxTokens, label: "Full resident")
+                let predTPS = StreamingEngine.predictTPS(numLayers: engine.numLayers, residentCount: engine.numLayers,
+                    avgLayerMB: avgLayerMB, totalModelMB: totalModelMB,
+                    memBandwidthGBps: memBandwidthGBps, nvmeBandwidthGBps: nvmeBandwidthGBps)
+                streamLog(String(format: "Full resident: actual=%.2f TPS, predicted=%.2f TPS, %.0f MB", tps, predTPS, peak))
+                results.append(BenchmarkResult(
+                    label: "Full resident(\(engine.numLayers)/\(engine.numLayers), pred \(String(format: "%.1f", predTPS)))",
+                    avgTPS: tps, promptTPS: 0,
+                    allTPS: [tps], tokenCount: maxTokens,
+                    peakMemoryMB: peak, loadTimeSeconds: loadTimeSeconds))
+            } else {
+                streamLog("--- Full resident skipped: need \(safeThreshold)MB, have \(currentAvailMB)MB ---")
+            }
+        }
+
+        // Run 6: Sweep additional points for models that fit in memory (find optimal balance)
+        if totalModelMB < 6000 {
+            streamLog("--- Sweep: finding optimal balance point ---")
+            let sweepPercentages = [10, 25, 50, 75, 90]
+            for pct in sweepPercentages {
+                let count = engine.numLayers * pct / 100
+                guard count > 0, count < engine.numLayers, !seenCounts.contains(count) else { continue }
+                seenCounts.insert(count)
+
+                status = "Sweep \(pct)%: \(count)/\(engine.numLayers)..."
+                engine.setupResidentLayers(count: count)
+                let (tps, peak, _) = runStreamingPass(engine, maxTokens: maxTokens, label: "Sweep \(pct)%")
+                let predTPS = StreamingEngine.predictTPS(numLayers: engine.numLayers, residentCount: count,
+                    avgLayerMB: avgLayerMB, totalModelMB: totalModelMB,
+                    memBandwidthGBps: memBandwidthGBps, nvmeBandwidthGBps: nvmeBandwidthGBps)
+                streamLog(String(format: "Sweep %d%% (%d/%d): actual=%.2f TPS, predicted=%.2f TPS, %.0f MB",
+                                 pct, count, engine.numLayers, tps, predTPS, peak))
+                results.append(BenchmarkResult(
+                    label: "Sweep \(pct)%(\(count)/\(engine.numLayers))", avgTPS: tps, promptTPS: 0,
+                    allTPS: [tps], tokenCount: maxTokens,
+                    peakMemoryMB: peak, loadTimeSeconds: loadTimeSeconds))
+            }
+        }
+
         // Summary
-        let summary = results.map { "\($0.label): \(String(format: "%.2f", $0.avgTPS)) TPS" }.joined(separator: " | ")
-        status = summary
-        streamLog(summary)
+        let summary = results.map { "\($0.label): \(String(format: "%.2f", $0.avgTPS)) TPS" }.joined(separator: "\n")
+        status = "Done! See results below"
+        streamLog("=== RESULTS ===\n\(summary)")
 
         isRunning = false
         saveResults()

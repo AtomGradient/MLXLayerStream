@@ -100,6 +100,29 @@ def split_model(model_path, output_dir):
             dst = os.path.join(output_dir, os.path.basename(f))
             shutil.copy2(f, dst)
 
+    # Extract KV cache config from config.json
+    config_path = os.path.join(model_path, "config.json")
+    kv_config = {}
+    if os.path.exists(config_path):
+        with open(config_path) as cf:
+            config = json.load(cf)
+        num_kv_heads = config.get("num_key_value_heads", config.get("num_attention_heads", 0))
+        num_heads = config.get("num_attention_heads", 1)
+        head_dim = config.get("head_dim", config.get("hidden_size", 0) // num_heads)
+        full_attn_interval = config.get("full_attention_interval", 0)
+        kv_config = {
+            "num_key_value_heads": num_kv_heads,
+            "head_dim": head_dim,
+            "num_hidden_layers": num_layers,
+            "full_attention_interval": full_attn_interval,
+        }
+        # Compute bytes per token for KV cache
+        attn_layers = num_layers // full_attn_interval if full_attn_interval > 0 else num_layers
+        bytes_per_layer_per_token = 2 * num_kv_heads * head_dim * 2  # K+V, bf16
+        kv_bytes_per_token = bytes_per_layer_per_token * attn_layers
+        kv_config["kv_bytes_per_token"] = kv_bytes_per_token
+        print(f"KV config: kvHeads={num_kv_heads}, headDim={head_dim}, fullAttnInterval={full_attn_interval}, bytesPerToken={kv_bytes_per_token}")
+
     # Write streaming metadata
     info = {
         "model_name": model_name,
@@ -108,6 +131,7 @@ def split_model(model_path, output_dir):
         "layer_sizes_bytes": {str(i): s for i, s in layer_sizes.items()},
         "total_weight_bytes": non_layer_size + sum(layer_sizes.values()),
         "avg_layer_bytes": sum(layer_sizes.values()) // num_layers if num_layers else 0,
+        "kv_config": kv_config,
     }
     with open(os.path.join(output_dir, "streaming_info.json"), "w") as f:
         json.dump(info, f, indent=2)

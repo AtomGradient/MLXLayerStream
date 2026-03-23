@@ -432,3 +432,100 @@ def compute_resident_layers(
         return set(range(0, num_layers, step))[:max_resident]
     else:
         return set()
+
+
+def compute_adaptive_residency(
+    num_layers: int,
+    avg_layer_mb: float,
+    non_layer_mb: float,
+    available_memory_mb: float,
+    kv_bytes_per_token: int = 0,
+    priority: str = "balanced",
+    expected_max_tokens: int = 2048,
+    safety_factor: float = 0.9,
+) -> dict:
+    """Compute optimal resident layer count using the adaptive formula.
+
+    Mirrors StreamingEngine.computeOptimalResidency() in Swift.
+
+    Args:
+        num_layers: Total transformer layers.
+        avg_layer_mb: Average layer weight size in MB.
+        non_layer_mb: Non-layer weight size in MB (embed, norm, lm_head).
+        available_memory_mb: Available device memory in MB.
+        kv_bytes_per_token: KV cache bytes per token (0 = use fallback estimate).
+        priority: 'maxTPS', 'balanced', or 'maxContext'.
+        expected_max_tokens: Max context length for maxContext mode.
+        safety_factor: Fraction of computed count to use (default 0.9).
+
+    Returns:
+        Dict with resident_count, kv_reserve_mb, layer_budget_mb, available_mb.
+    """
+    # KV reserve tokens by priority
+    kv_reserve_tokens = {
+        "maxTPS": 512,
+        "balanced": 1024,
+        "maxContext": expected_max_tokens,
+    }.get(priority, 1024)
+
+    # Fixed overhead: non-layer + 1 streaming buffer + runtime
+    runtime_overhead_mb = 150
+    fixed_mb = non_layer_mb + avg_layer_mb + runtime_overhead_mb
+
+    # KV cache reserve
+    if kv_bytes_per_token > 0:
+        kv_reserve_mb = kv_reserve_tokens * kv_bytes_per_token / (1024 * 1024)
+    else:
+        kv_reserve_mb = kv_reserve_tokens * 5 / 1000  # fallback
+
+    # Layer budget
+    layer_budget_mb = available_memory_mb - fixed_mb - kv_reserve_mb
+
+    if layer_budget_mb <= 0 or avg_layer_mb <= 0:
+        return {
+            "resident_count": 0,
+            "kv_reserve_mb": kv_reserve_mb,
+            "layer_budget_mb": layer_budget_mb,
+            "available_mb": available_memory_mb,
+        }
+
+    raw_count = int(layer_budget_mb / avg_layer_mb)
+    safe_count = int(raw_count * safety_factor)
+    resident_count = min(max(safe_count, 0), num_layers)
+
+    return {
+        "resident_count": resident_count,
+        "kv_reserve_mb": kv_reserve_mb,
+        "layer_budget_mb": layer_budget_mb,
+        "available_mb": available_memory_mb,
+    }
+
+
+def predict_tps(
+    num_layers: int,
+    resident_count: int,
+    avg_layer_mb: float,
+    total_model_mb: float,
+    mem_bandwidth_gbps: float = 800.0,
+    nvme_bandwidth_gbps: float = 7.4,
+) -> float:
+    """Predict TPS based on hardware parameters and residency ratio.
+
+    Formula: TPS = 1 / (T_compute + N_streamed × T_io_per_layer)
+
+    Args:
+        num_layers: Total layers.
+        resident_count: Number of resident layers.
+        avg_layer_mb: Average layer size in MB.
+        total_model_mb: Total model size in MB.
+        mem_bandwidth_gbps: GPU memory bandwidth in GB/s.
+        nvme_bandwidth_gbps: NVMe read bandwidth in GB/s.
+
+    Returns:
+        Predicted tokens per second.
+    """
+    streamed_layers = num_layers - resident_count
+    t_compute = total_model_mb / (mem_bandwidth_gbps * 1024)
+    t_io_per_layer = avg_layer_mb / (nvme_bandwidth_gbps * 1024)
+    total_time = t_compute + streamed_layers * t_io_per_layer
+    return 1.0 / total_time if total_time > 0 else 0.0
