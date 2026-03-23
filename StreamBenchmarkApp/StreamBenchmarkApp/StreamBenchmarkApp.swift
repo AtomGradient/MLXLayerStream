@@ -6,11 +6,59 @@ import MLXLMCommon
 
 // MARK: - Logging
 
+/// Structured logger: writes timestamped entries to Documents/benchmark_log.txt
+/// and keeps the latest result in Documents/benchmark_results.txt.
 func streamLog(_ msg: String) {
     let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-    let logFile = docsURL.appendingPathComponent("benchmark_results.txt")
-    let current = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
-    try? (current + msg + "\n").write(to: logFile, atomically: true, encoding: .utf8)
+    let logFile = docsURL.appendingPathComponent("benchmark_log.txt")
+    let ts = ISO8601DateFormatter().string(from: Date())
+    let entry = "[\(ts)] \(msg)\n"
+    if let handle = try? FileHandle(forWritingTo: logFile) {
+        handle.seekToEndOfFile()
+        handle.write(entry.data(using: .utf8)!)
+        handle.closeFile()
+    } else {
+        try? entry.write(to: logFile, atomically: true, encoding: .utf8)
+    }
+}
+
+/// Save a structured error report with full diagnostics
+func saveErrorReport(phase: String, error: Error, model: String, extra: [String: String] = [:]) {
+    let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let ts = ISO8601DateFormatter().string(from: Date())
+
+    var lines = [String]()
+    lines.append("=== MLX Layer-Stream ERROR REPORT ===")
+    lines.append("Timestamp: \(ts)")
+    lines.append("Model: \(model)")
+    lines.append("Device: \(deviceInfoStatic())")
+    lines.append("Phase: \(phase)")
+    lines.append("Error Type: \(type(of: error))")
+    lines.append("Error: \(error)")
+    lines.append("Localized: \(error.localizedDescription)")
+    lines.append("Memory: active=\(GPU.activeMemory / (1024*1024)) MB, peak=\(GPU.peakMemory / (1024*1024)) MB, cache=\(GPU.cacheMemory / (1024*1024)) MB")
+    for (k, v) in extra.sorted(by: { $0.key < $1.key }) {
+        lines.append("\(k): \(v)")
+    }
+    lines.append("=== END ERROR REPORT ===")
+
+    let report = lines.joined(separator: "\n")
+
+    // Write to results file (what gets pulled by the deploy script)
+    try? report.write(
+        to: docsURL.appendingPathComponent("benchmark_results.txt"),
+        atomically: true, encoding: .utf8)
+
+    // Also append to log
+    streamLog("ERROR [\(phase)] \(error)")
+}
+
+func deviceInfoStatic() -> String {
+    #if os(iOS)
+    return "\(UIDevice.current.name) (\(UIDevice.current.systemName) \(UIDevice.current.systemVersion))"
+    #else
+    return ProcessInfo.processInfo.hostName
+    #endif
 }
 
 // MARK: - Configuration
@@ -59,6 +107,7 @@ class BenchmarkViewModel: ObservableObject {
 
         guard FileManager.default.fileExists(atPath: localModelURL.appendingPathComponent("config.json").path) else {
             status = "No model found in Documents/model/"
+            saveErrorReport(phase: "pre-load", error: NSError(domain: "StreamBenchmark", code: 1, userInfo: [NSLocalizedDescriptionKey: "config.json not found"]), model: modelName)
             isRunning = false
             return
         }
@@ -67,53 +116,27 @@ class BenchmarkViewModel: ObservableObject {
             atPath: localModelURL.appendingPathComponent("streaming_info.json").path)
 
         status = "Loading \(modelName)\(isStreaming ? " (streaming)" : "")..."
+        streamLog("Loading \(modelName), streaming=\(isStreaming)")
         GPU.clearCache()
         GPU.resetPeakMemory()
         let loadStart = CFAbsoluteTimeGetCurrent()
 
         if isStreaming {
             do {
-                // Create temp dir with non_layer.safetensors → model.safetensors + configs
-                let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("s_\(UUID().uuidString)")
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-                let fm = FileManager.default
-                for item in try fm.contentsOfDirectory(at: localModelURL, includingPropertiesForKeys: nil) {
-                    let name = item.lastPathComponent
-                    if name == "non_layer.safetensors" {
-                        try fm.createSymbolicLink(at: tempDir.appendingPathComponent("model.safetensors"), withDestinationURL: item)
-                    } else if name.hasSuffix(".json") && !name.hasPrefix("layer_") && name != "streaming_info.json" {
-                        try fm.createSymbolicLink(at: tempDir.appendingPathComponent(name), withDestinationURL: item)
-                    }
-                }
-
-                // Load model with only non-layer weights
-                let tempContainer = try await LLMModelFactory.shared.loadContainer(
-                    configuration: ModelConfiguration(directory: tempDir))
-                try? fm.removeItem(at: tempDir)
-
-                // Read streaming info
-                let infoData = try Data(contentsOf: localModelURL.appendingPathComponent("streaming_info.json"))
-                let info = try JSONSerialization.jsonObject(with: infoData) as! [String: Any]
-                let numLayers = info["num_layers"] as! Int
-
-                // Set up streaming engine via container.perform
-                let engine: StreamingEngine = try await tempContainer.perform { context in
-                    StreamingEngine(
-                        modelDir: localModelURL,
-                        numLayers: numLayers,
-                        model: context.model)
-                }
-                self.streamingEngine = engine
-                self.container = tempContainer
+                try await loadStreamingModel(modelDir: localModelURL)
 
                 isStreamingMode = true
                 loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart
                 let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
                 status = "Streaming: \(modelName) (\(String(format: "%.0f", loadMemMB)) MB)"
                 modelLoaded = true
+                streamLog("Streaming model loaded: \(modelName), \(String(format: "%.0f", loadMemMB)) MB, \(String(format: "%.1f", loadTimeSeconds))s")
             } catch {
-                status = "Stream load: \(error)"
-                saveError("Stream load: \(error)")
+                status = "Streaming load failed: \(error)"
+                saveErrorReport(phase: "streaming-load", error: error, model: modelName, extra: [
+                    "modelDir": localModelURL.path,
+                    "non_layer_exists": "\(FileManager.default.fileExists(atPath: localModelURL.appendingPathComponent("non_layer.safetensors").path))",
+                ])
             }
         } else {
             do {
@@ -124,12 +147,71 @@ class BenchmarkViewModel: ObservableObject {
                 let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
                 status = "Loaded \(modelName) (\(String(format: "%.0f", loadMemMB)) MB)"
                 modelLoaded = true
+                streamLog("Baseline model loaded: \(modelName), \(String(format: "%.0f", loadMemMB)) MB")
             } catch {
                 status = "Load failed: \(error)"
-                saveError("Load failed: \(error)")
+                saveErrorReport(phase: "baseline-load", error: error, model: modelName)
             }
         }
         isRunning = false
+    }
+
+    /// Load model for streaming: create architecture, quantize, load only non-layer weights.
+    ///
+    /// Key insight: we can't use loadWeights() because it:
+    /// 1. Only quantizes modules whose `.scales` key exists in the weight dict
+    ///    (non-layer weights don't have layer `.scales`, so layers stay as Linear)
+    /// 2. Calls eval(model) which materializes ALL parameters including random layer weights
+    ///
+    /// Instead we manually: create model → quantize ALL modules → load non-layer weights → eval only non-layer params.
+    private func loadStreamingModel(modelDir: URL) async throws {
+        // 1. Read config.json to determine model type and quantization
+        let configURL = modelDir.appendingPathComponent("config.json")
+        let configData = try Data(contentsOf: configURL)
+        let baseConfig = try JSONDecoder.json5().decode(BaseConfiguration.self, from: configData)
+        streamLog("Model type: \(baseConfig.modelType)")
+
+        // 2. Create model architecture via type registry
+        let model = try await LLMTypeRegistry.shared.createModel(
+            configuration: configData, modelType: baseConfig.modelType)
+        streamLog("Model architecture created")
+
+        // 3. Quantize ALL quantizable modules (Linear → QuantizedLinear)
+        //    This must happen BEFORE loading weights so shapes match the safetensors format.
+        if let plq = baseConfig.perLayerQuantization {
+            quantize(model: model as! Module) { path, module in
+                plq.quantization(layer: path)?.asTuple
+            }
+            streamLog("Model quantized (per-layer config)")
+        } else if let q = baseConfig.quantization {
+            quantize(model: model as! Module,
+                     groupSize: q.groupSize, bits: q.bits, mode: q.mode)
+            streamLog("Model quantized: \(q.bits)-bit, group=\(q.groupSize)")
+        }
+
+        // 4. Load non-layer weights from non_layer.safetensors
+        let nonLayerURL = modelDir.appendingPathComponent("non_layer.safetensors")
+        var weights = try loadArrays(url: nonLayerURL)
+        weights = model.sanitize(weights: weights)
+        let params = ModuleParameters.unflattened(weights)
+        try (model as! Module).update(parameters: params, verify: .none)
+
+        // Only eval non-layer parameters (embed_tokens, norm, lm_head) — NOT layer weights
+        eval(weights.values.map { $0 })
+        streamLog("Non-layer weights loaded: \(weights.count) tensors")
+
+        // 5. Read streaming info
+        let infoData = try Data(contentsOf: modelDir.appendingPathComponent("streaming_info.json"))
+        let info = try JSONSerialization.jsonObject(with: infoData) as! [String: Any]
+        let numLayers = info["num_layers"] as! Int
+        streamLog("Streaming info: \(numLayers) layers")
+
+        // 6. Create streaming engine directly (no ModelContainer needed)
+        let engine = StreamingEngine(
+            modelDir: modelDir,
+            numLayers: numLayers,
+            model: model)
+        self.streamingEngine = engine
     }
 
     func runBenchmark() async {
@@ -176,6 +258,7 @@ class BenchmarkViewModel: ObservableObject {
                 status = "Run \(run): \(String(format: "%.1f", r.0)) TPS"
             } catch {
                 status = "Error: \(error)"
+                saveErrorReport(phase: "baseline-run-\(run)", error: error, model: modelName)
             }
         }
 
@@ -198,6 +281,7 @@ class BenchmarkViewModel: ObservableObject {
         results = []
 
         status = "Streaming: starting..."
+        streamLog("Streaming benchmark starting...")
         GPU.clearCache()
         GPU.resetPeakMemory()
         engine.resetStats()
@@ -205,31 +289,56 @@ class BenchmarkViewModel: ObservableObject {
         // Simple decode test
         let inputTokens: [Int32] = [9707]  // "Hello" token
         var currentInput = MLXArray(inputTokens).reshaped([1, 1])
+        streamLog("Input created: shape=\(currentInput.shape), dtype=\(currentInput.dtype)")
+
         let cache = engine.newCache()
+        streamLog("Cache created: \(cache.count) entries")
 
         let maxTokens = 10
         let start = CFAbsoluteTimeGetCurrent()
 
-        for step in 0..<maxTokens {
-            status = "Streaming: token \(step+1)/\(maxTokens)..."
-            let logits = engine.streamingStep(currentInput, cache: cache)
-            eval(logits)
-            let nextToken = MLX.argMax(logits[0..., (-1)..., 0...], axis: -1)
-            eval(nextToken)
-            currentInput = nextToken.reshaped([1, 1])
+        do {
+            for step in 0..<maxTokens {
+                status = "Streaming: token \(step+1)/\(maxTokens)..."
+                streamLog("Step \(step): input shape=\(currentInput.shape), mem=\(GPU.activeMemory/(1024*1024))MB")
+
+                let stepStart = CFAbsoluteTimeGetCurrent()
+                streamLog("Step \(step): calling streamingStep...")
+                let logits = engine.streamingStep(currentInput, cache: cache)
+                streamLog("Step \(step): streamingStep returned, logits shape=\(logits.shape)")
+
+                streamLog("Step \(step): eval(logits)...")
+                eval(logits)
+                streamLog("Step \(step): eval done, \(String(format: "%.1f", (CFAbsoluteTimeGetCurrent()-stepStart)*1000))ms")
+
+                let nextToken = MLX.argMax(logits[0..., (-1)..., 0...], axis: -1)
+                eval(nextToken)
+                streamLog("Step \(step): next token selected, mem=\(GPU.activeMemory/(1024*1024))MB peak=\(GPU.peakMemory/(1024*1024))MB")
+                currentInput = nextToken.reshaped([1, 1])
+            }
+
+            let elapsed = CFAbsoluteTimeGetCurrent() - start
+            let tps = Double(maxTokens) / elapsed
+            let peakMB = Double(GPU.peakMemory) / (1024 * 1024)
+
+            results.append(BenchmarkResult(
+                label: "Streaming", avgTPS: tps, promptTPS: 0,
+                allTPS: [tps], tokenCount: maxTokens,
+                peakMemoryMB: peakMB, loadTimeSeconds: loadTimeSeconds
+            ))
+
+            let summary = String(format: "Streaming: %.2f TPS, %.0f MB, load=%.0fms/layer", tps, peakMB, engine.avgLoadMs)
+            status = summary
+            streamLog(summary)
+        } catch {
+            status = "Streaming error: \(error)"
+            streamLog("Streaming CAUGHT error: \(error)")
+            saveErrorReport(phase: "streaming-inference", error: error, model: modelName, extra: [
+                "tokens_completed": "\(maxTokens)",
+                "avg_load_ms": String(format: "%.1f", engine.avgLoadMs),
+            ])
         }
 
-        let elapsed = CFAbsoluteTimeGetCurrent() - start
-        let tps = Double(maxTokens) / elapsed
-        let peakMB = Double(GPU.peakMemory) / (1024 * 1024)
-
-        results.append(BenchmarkResult(
-            label: "Streaming", avgTPS: tps, promptTPS: 0,
-            allTPS: [tps], tokenCount: maxTokens,
-            peakMemoryMB: peakMB, loadTimeSeconds: loadTimeSeconds
-        ))
-
-        status = String(format: "Streaming: %.2f TPS, %.0f MB, load=%.0fms/layer", tps, peakMB, engine.avgLoadMs)
         isRunning = false
         saveResults()
     }
@@ -239,12 +348,7 @@ class BenchmarkViewModel: ObservableObject {
         guard !text.isEmpty else { return }
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         try? text.write(to: docsURL.appendingPathComponent("benchmark_results.txt"), atomically: true, encoding: .utf8)
-    }
-
-    private func saveError(_ message: String) {
-        let text = "=== MLX Layer-Stream Device Benchmark ===\nModel: \(modelName)\nDevice: \(deviceInfo())\nERROR: \(message)\n=== END ==="
-        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        try? text.write(to: docsURL.appendingPathComponent("benchmark_results.txt"), atomically: true, encoding: .utf8)
+        streamLog("Results saved")
     }
 
     var resultsSummary: String {
@@ -253,7 +357,7 @@ class BenchmarkViewModel: ObservableObject {
         lines.append("=== MLX Layer-Stream Device Benchmark ===")
         lines.append("Model: \(modelName)")
         lines.append("max_tokens=\(kMaxTokens), runs=\(kNumRuns)")
-        lines.append("Device: \(deviceInfo())")
+        lines.append("Device: \(deviceInfoStatic())")
         lines.append("")
         for r in results {
             lines.append("Strategy: \(r.label)")
@@ -267,14 +371,6 @@ class BenchmarkViewModel: ObservableObject {
         lines.append("")
         lines.append("=== END ===")
         return lines.joined(separator: "\n")
-    }
-
-    private func deviceInfo() -> String {
-        #if os(iOS)
-        return "\(UIDevice.current.name) (\(UIDevice.current.systemName) \(UIDevice.current.systemVersion))"
-        #else
-        return ProcessInfo.processInfo.hostName
-        #endif
     }
 }
 

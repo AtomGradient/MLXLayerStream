@@ -158,8 +158,17 @@ echo "$DEVICES" | while IFS= read -r line; do
             --domain-type appDataContainer \
             --domain-identifier "$BUNDLE_ID" 2>/dev/null || continue
 
-        if grep -q "END" /tmp/device_results.txt 2>/dev/null; then
+        if grep -q "=== END ===" /tmp/device_results.txt 2>/dev/null; then
             echo "Results received! (${ELAPSED}s)"
+            cp /tmp/device_results.txt "$RESULT_FILE"
+            echo ""
+            cat "$RESULT_FILE"
+            break
+        fi
+
+        # Auto-detect error reports (don't wait full timeout on failures)
+        if grep -q "=== END ERROR REPORT ===" /tmp/device_results.txt 2>/dev/null; then
+            echo "ERROR detected on device! (${ELAPSED}s)"
             cp /tmp/device_results.txt "$RESULT_FILE"
             echo ""
             cat "$RESULT_FILE"
@@ -179,6 +188,15 @@ echo "$DEVICES" | while IFS= read -r line; do
             --domain-type appDataContainer \
             --domain-identifier "$BUNDLE_ID" 2>/dev/null || true
     fi
+
+    # Pull detailed log file for diagnostics
+    LOG_FILE="$RESULTS_DIR/${NAME// /_}_${MODEL_NAME}_log.txt"
+    xcrun devicectl device copy from \
+        --device "$UUID" \
+        --source "Documents/benchmark_log.txt" \
+        --destination "$LOG_FILE" \
+        --domain-type appDataContainer \
+        --domain-identifier "$BUNDLE_ID" 2>/dev/null && echo "Log saved: $LOG_FILE" || true
 
     # Kill app
     xcrun devicectl device process terminate --device "$UUID" "$BUNDLE_ID" 2>/dev/null || true

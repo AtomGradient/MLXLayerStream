@@ -15,6 +15,7 @@ class StreamingEngine {
 
     var layerLoadTimes: [Double] = []
     var layerUnloadTimes: [Double] = []
+    var layerErrors: [(Int, String)] = []
 
     init(modelDir: URL, numLayers: Int, model: any LanguageModel) {
         self.modelDir = modelDir
@@ -26,23 +27,38 @@ class StreamingEngine {
 
     func loadLayer(_ index: Int) {
         let start = CFAbsoluteTimeGetCurrent()
+        streamLog("  [SE] loadLayer(\(index)) start, mem=\(GPU.activeMemory/(1024*1024))MB")
         let file = modelDir.appendingPathComponent(String(format: "layer_%04d.safetensors", index))
-        guard FileManager.default.fileExists(atPath: file.path) else { return }
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            let msg = "layer_%04d.safetensors not found"
+            layerErrors.append((index, msg))
+            streamLog("  [SE] \(String(format: msg, index))")
+            return
+        }
 
         do {
+            streamLog("  [SE] loadLayer(\(index)) reading file...")
             var weights = try loadArrays(url: file)
+            streamLog("  [SE] loadLayer(\(index)) read \(weights.count) tensors, sanitizing...")
             weights = model.sanitize(weights: weights)
+            streamLog("  [SE] loadLayer(\(index)) sanitized to \(weights.count) tensors, unflattening...")
             let params = ModuleParameters.unflattened(weights)
+            streamLog("  [SE] loadLayer(\(index)) updating model params...")
             try (model as! Module).update(parameters: params, verify: .none)
+            streamLog("  [SE] loadLayer(\(index)) eval weights...")
             eval(weights.values.map { $0 })
+            streamLog("  [SE] loadLayer(\(index)) done, mem=\(GPU.activeMemory/(1024*1024))MB")
         } catch {
-            streamLog("  [SE] load layer \(index): \(error)")
+            let msg = "load layer \(index) failed: \(error)"
+            layerErrors.append((index, msg))
+            streamLog("  [SE] \(msg)")
         }
         layerLoadTimes.append((CFAbsoluteTimeGetCurrent() - start) * 1000)
     }
 
     func unloadLayer(_ index: Int) {
         let start = CFAbsoluteTimeGetCurrent()
+        streamLog("  [SE] unloadLayer(\(index)) start")
         let module = model as! Module
         let layerParams = module.parameters().flattened().filter { $0.0.contains("layers.\(index).") }
         var placeholders = [String: MLXArray]()
@@ -50,8 +66,15 @@ class StreamingEngine {
             placeholders[key] = MLXArray.zeros([1], dtype: value.dtype)
         }
         let params = ModuleParameters.unflattened(placeholders)
-        try! module.update(parameters: params, verify: .none)
+        do {
+            try module.update(parameters: params, verify: .none)
+        } catch {
+            let msg = "unload layer \(index) failed: \(error)"
+            layerErrors.append((index, msg))
+            streamLog("  [SE] \(msg)")
+        }
         GPU.clearCache()
+        streamLog("  [SE] unloadLayer(\(index)) done, mem=\(GPU.activeMemory/(1024*1024))MB")
         layerUnloadTimes.append((CFAbsoluteTimeGetCurrent() - start) * 1000)
     }
 
@@ -72,6 +95,7 @@ class StreamingEngine {
     func resetStats() {
         layerLoadTimes = []
         layerUnloadTimes = []
+        layerErrors = []
     }
 
     var avgLoadMs: Double {
