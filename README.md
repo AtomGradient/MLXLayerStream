@@ -10,10 +10,18 @@ Running 9B+ language models on 8GB Apple Silicon edge devices by streaming layer
 
 | Metric | Value |
 |--------|-------|
-| Memory reduction | 60–88% with full layer-streaming |
-| 27B-4bit peak memory | 14.09 GB → 1.70 GB (88% reduction) |
-| iPad/iPhone TPS ratio | 1.90–1.92x (matches 2x bandwidth ratio) |
-| 9B-6bit on 8GB iPad | **OOM** — proves streaming is necessary |
+| Memory reduction | 63–81% on real devices |
+| 9B-6bit on 8GB iPad | **0.3 TPS at 1.78 GB** (was OOM) |
+| iPad/iPhone TPS ratio | 1.90–1.93x baseline (matches 2x bandwidth ratio) |
+| 27B-4bit peak memory | 14.09 GB → 1.70 GB (88% reduction, Mac Studio) |
+
+### Device Streaming Results (Measured)
+
+| Model | iPad M3 Baseline | iPad M3 Stream | iPhone Baseline | iPhone Stream | Mem Savings |
+|-------|:---:|:---:|:---:|:---:|:---:|
+| 0.8B-8bit | 103.2 TPS / 799 MB | 5.8 TPS / 293 MB | 53.5 TPS / 792 MB | 4.1 TPS / 293 MB | 63% |
+| 4B-4bit | 35.5 TPS / 2330 MB | 1.9 TPS / 436 MB | 18.4 TPS / 2317 MB | 0.7 TPS / 436 MB | 81% |
+| **9B-6bit** | **OOM** | **0.3 TPS / 1780 MB** | — | **0.3 TPS / 1780 MB** | — |
 
 ### Device Baselines (Fully Resident)
 

@@ -80,8 +80,8 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <div class="stats">
 <div class="stat"><div class="num">88%</div><div class="label"><span class="e">Memory Reduction</span><span class="z">内存减少</span></div></div>
 <div class="stat"><div class="num">1.92x</div><div class="label"><span class="e">BW Scaling Verified</span><span class="z">带宽缩放验证</span></div></div>
-<div class="stat"><div class="num">9B</div><div class="label"><span class="e">OOM on 8GB iPad</span><span class="z">在 8GB iPad 上 OOM</span></div></div>
-<div class="stat"><div class="num">27B</div><div class="label"><span class="e">on 8GB (streaming)</span><span class="z">8GB 上可运行</span></div></div>
+<div class="stat"><div class="num">9B</div><div class="label"><span class="e">Runs on 8GB iPad</span><span class="z">在 8GB iPad 上运行</span></div></div>
+<div class="stat"><div class="num">0.3</div><div class="label"><span class="e">TPS (9B on iPhone)</span><span class="z">TPS（9B iPhone）</span></div></div>
 </div>
 </div>
 </div>
@@ -117,9 +117,9 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <span class="z">所有模型的 iPad/iPhone TPS 比值 = <strong>1.90–1.93x</strong>，完美匹配理论带宽比 2x（100 vs 50 GB/s）。</span></p>
 </div>
 <div class="card">
-<h3><span class="e">9B OOM Proves Necessity</span><span class="z">9B OOM 证明必要性</span></h3>
-<p><span class="e">Qwen3.5-9B-6bit (6.9GB weights) crashes on 8GB iPad — iOS overhead leaves only ~5-6GB available. <strong>Streaming is essential for all 9B+ models.</strong></span>
-<span class="z">Qwen3.5-9B-6bit（6.9GB 权重）在 8GB iPad 上崩溃 — iOS 开销仅留 ~5-6GB 可用。<strong>所有 9B+ 模型都需要流式加载。</strong></span></p>
+<h3><span class="e">9B Now Runs on 8GB!</span><span class="z">9B 现在可在 8GB 上运行！</span></h3>
+<p><span class="e">Qwen3.5-9B-6bit (6.9GB weights) crashes with standard loading, but <strong>runs at 0.3 TPS with only 1.78 GB memory via streaming</strong> on both iPad and iPhone.</span>
+<span class="z">Qwen3.5-9B-6bit（6.9GB 权重）标准加载会崩溃，但<strong>通过流式加载仅用 1.78 GB 内存，以 0.3 TPS 运行</strong>，iPad 和 iPhone 均可。</span></p>
 </div>
 </div>
 
@@ -132,6 +132,19 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <tr><td>4B-6bit</td><td>3.32 GB</td><td>25.2 TPS</td><td>13.2 TPS</td><td>1.91x</td></tr>
 <tr class="highlight"><td>9B-6bit</td><td>6.90 GB</td><td class="oom">OOM</td><td>—</td><td>—</td></tr>
 </table>
+
+<h2 style="margin-top:40px"><span class="e">Device Streaming Results (Measured)</span><span class="z">设备流式结果（实测）</span></h2>
+<table>
+<tr><th><span class="e">Model</span><span class="z">模型</span></th><th colspan="2">iPad M3</th><th colspan="2">iPhone A17</th><th><span class="e">Mem Savings</span><span class="z">内存节省</span></th></tr>
+<tr><th></th><th><span class="e">Baseline</span><span class="z">基线</span></th><th><span class="e">Stream</span><span class="z">流式</span></th><th><span class="e">Baseline</span><span class="z">基线</span></th><th><span class="e">Stream</span><span class="z">流式</span></th><th></th></tr>
+<tr><td>0.8B-8bit</td><td>103.2 TPS / 799 MB</td><td>5.8 TPS / 293 MB</td><td>53.5 TPS / 792 MB</td><td>4.1 TPS / 293 MB</td><td>63%</td></tr>
+<tr><td>4B-4bit</td><td>35.5 TPS / 2330 MB</td><td>1.9 TPS / 436 MB</td><td>18.4 TPS / 2317 MB</td><td>0.7 TPS / 436 MB</td><td>81%</td></tr>
+<tr class="highlight"><td>9B-6bit</td><td class="oom">OOM / Crash</td><td><strong>0.3 TPS / 1780 MB</strong></td><td>—</td><td><strong>0.3 TPS / 1780 MB</strong></td><td>—</td></tr>
+</table>
+<p style="font-size:0.8rem;color:var(--text2)">
+<span class="e">9B-6bit: impossible without streaming, now runs at 1.78 GB peak memory on 8GB devices.</span>
+<span class="z">9B-6bit：无流式无法运行，现在在 8GB 设备上仅用 1.78 GB 峰值内存即可运行。</span>
+</p>
 </div>
 </section>
 
