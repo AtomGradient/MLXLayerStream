@@ -164,6 +164,20 @@ img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 
 <span class="e">*iPhone 5GB: iOS memory pressure causes swap, TPS drops. Recommended budget: <strong>4 GB</strong>.</span>
 <span class="z">*iPhone 5GB：iOS 内存压力导致交换，TPS 下降。推荐预算：<strong>4 GB</strong>。</span>
 </p>
+
+<h3 style="margin-top:24px"><span class="e">4B-4bit: Trade Memory for KV Cache</span><span class="z">4B-4bit：用内存换 KV Cache 空间</span></h3>
+<p style="font-size:0.85rem;color:var(--text2);margin-bottom:12px">
+<span class="e">Even models that fit in memory benefit: stream a few layers to free memory for longer context.</span>
+<span class="z">即使放得下的模型也受益：流式几层即可释放内存给更长上下文。</span>
+</p>
+<table>
+<tr><th><span class="e">Resident</span><span class="z">驻留</span></th><th><span class="e">Streamed</span><span class="z">流式</span></th><th>iPad M3</th><th>iPhone A17</th><th><span class="e">Memory</span><span class="z">内存</span></th><th><span class="e">Free for KV</span><span class="z">KV可用</span></th></tr>
+<tr><td>0/32</td><td>32</td><td>3.1 TPS</td><td>1.9 TPS</td><td>436 MB</td><td>~5.6 GB</td></tr>
+<tr><td>16/32</td><td>16</td><td>5.2 TPS</td><td>3.0 TPS</td><td>1395 MB</td><td>~4.6 GB</td></tr>
+<tr><td>24/32</td><td>8</td><td>8.3 TPS</td><td>4.4 TPS</td><td>1875 MB</td><td>~4.1 GB</td></tr>
+<tr class="highlight"><td><strong>28/32</strong></td><td><strong>4</strong></td><td><strong>12.6 TPS</strong></td><td><strong>6.0 TPS</strong></td><td><strong>2114 MB</strong></td><td><strong>~3.9 GB</strong></td></tr>
+<tr><td>32/32</td><td>0</td><td>35.5 TPS</td><td>18.4 TPS</td><td>2330 MB</td><td>~3.7 GB</td></tr>
+</table>
 </div>
 </section>
 

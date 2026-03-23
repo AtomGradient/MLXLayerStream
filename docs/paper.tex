@@ -311,6 +311,26 @@ Full stream  & 0/32  & 32 & 0.28 & 0.27 & 1.78\,GB & --- \\
 
 \textbf{Key findings}: (1)~TPS scales linearly with resident fraction up to the 4\,GB sweet spot (+61\% vs.\ full stream). (2)~The optimal budget for 8\,GB devices is \textbf{4\,GB}: both iPad and iPhone achieve 0.45 TPS while staying safely within memory limits. (3)~Exceeding available memory (5\,GB on iPhone) triggers OS memory pressure, causing a catastrophic TPS drop---confirming the importance of staying within budget.
 
+Hybrid residency also benefits models that \emph{fit} in memory. Table~\ref{tab:hybrid4b} shows that Qwen3.5-4B-4bit at 90\% residency achieves 12.6 TPS on iPad while freeing 216\,MB for KV cache---enabling longer context windows without sacrificing interactive performance.
+
+\begin{table}[h]
+\centering
+\caption{Hybrid residency for Qwen3.5-4B-4bit on real 8\,GB devices.}
+\label{tab:hybrid4b}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Resident} & \textbf{Streamed} & \textbf{iPad TPS} & \textbf{iPhone TPS} & \textbf{Memory} & \textbf{Free for KV} \\
+\midrule
+0/32 (full stream) & 32 & 3.1 & 1.9 & 0.44\,GB & 5.6\,GB \\
+8/32 (25\%) & 24 & 3.8 & 2.4 & 0.92\,GB & 5.1\,GB \\
+16/32 (50\%) & 16 & 5.2 & 3.0 & 1.40\,GB & 4.6\,GB \\
+24/32 (75\%) & 8 & 8.3 & 4.4 & 1.88\,GB & 4.1\,GB \\
+\textbf{28/32 (90\%)} & \textbf{4} & \textbf{12.6} & \textbf{6.0} & \textbf{2.11\,GB} & \textbf{3.9\,GB} \\
+32/32 (baseline) & 0 & 35.5 & 18.4 & 2.33\,GB & 3.7\,GB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Bandwidth Scaling}
 
 The iPad/iPhone TPS ratio across all tested models falls in the narrow range 1.90--1.93$\times$, closely matching the theoretical memory bandwidth ratio of $100/50 = 2\times$. This confirms that decode throughput on Apple Silicon edge devices is \textbf{bandwidth-bound}: performance scales linearly with memory bandwidth regardless of GPU core count (10 cores on iPad M3 vs.\ 6 cores on iPhone A17~Pro).
@@ -323,9 +343,9 @@ The iPad/iPhone TPS ratio across all tested models falls in the narrow range 1.9
 
 For 8\,GB devices, the optimal model configuration depends on the use case:
 \begin{itemize}
-    \item \textbf{Interactive (>10 TPS)}: Qwen3.5-4B-4bit at 18.4 TPS on iPhone, 35.5 TPS on iPad. Fully resident, no streaming needed.
+    \item \textbf{Interactive (>10 TPS)}: Qwen3.5-4B-4bit with 90\% residency (28/32 layers): 12.6 TPS on iPad, 6.0 TPS on iPhone at 2.1\,GB---freeing 200+\,MB for KV cache compared to full-resident (2.3\,GB).
     \item \textbf{Quality-optimized}: Qwen3.5-4B-6bit (PPL~4.759) at 13.2/25.2 TPS (iPhone/iPad). Still fully resident at 3.32\,GB.
-    \item \textbf{Maximum quality with streaming}: Qwen3.5-9B-6bit (PPL~4.485) via hybrid layer-streaming. Measured 0.4 TPS on iPad at 3.6\,GB with 11/32 layers resident, or 0.3 TPS at 1.8\,GB with full streaming. Suitable for background or non-interactive generation.
+    \item \textbf{Maximum quality with streaming}: Qwen3.5-9B-6bit (PPL~4.485) via hybrid layer-streaming. Measured 0.45 TPS on iPad at 4.1\,GB with 14/32 layers resident. Suitable for background or non-interactive generation.
     \item \textbf{Hero result}: Qwen3.5-27B-4bit (PPL~4.010) via full streaming. Estimated 0.1--0.2 TPS on iPad based on Mac Studio extrapolation. Demonstrates feasibility, not practicality.
 \end{itemize}
 

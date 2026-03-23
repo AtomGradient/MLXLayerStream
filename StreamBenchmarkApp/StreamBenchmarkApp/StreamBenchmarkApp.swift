@@ -329,8 +329,23 @@ class BenchmarkViewModel: ObservableObject {
             allTPS: [tps1], tokenCount: maxTokens,
             peakMemoryMB: peak1, loadTimeSeconds: loadTimeSeconds))
 
-        // Run 2-N: Hybrid at multiple budget levels
-        let budgets = [2000, 3000, 3500, 4000, 5000]
+        // Run 2-N: Hybrid at multiple budget levels (adaptive to model size)
+        let totalModelMB = nonLayerMB + avgLayerMB * engine.numLayers
+        // Generate budgets from ~non_layer to ~total, covering 25/50/60/75/90% of model
+        let budgets: [Int]
+        if totalModelMB > 4000 {
+            // Large model (9B+): use absolute budgets relevant to 8GB devices
+            budgets = [2000, 3000, 3500, 4000, 5000]
+        } else {
+            // Smaller model (4B, 2B): use fractions of total model size
+            budgets = [
+                nonLayerMB + avgLayerMB * (engine.numLayers / 4),      // 25% resident
+                nonLayerMB + avgLayerMB * (engine.numLayers / 2),      // 50% resident
+                nonLayerMB + avgLayerMB * (engine.numLayers * 3 / 4),  // 75% resident
+                nonLayerMB + avgLayerMB * (engine.numLayers * 9 / 10), // 90% resident
+            ]
+        }
+        streamLog("Model: \(totalModelMB)MB, non_layer=\(nonLayerMB)MB, avg_layer=\(avgLayerMB)MB, budgets=\(budgets)")
         for budgetMB in budgets {
             let residentCount = StreamingEngine.computeResidentCount(
                 budgetMB: budgetMB, nonLayerMB: nonLayerMB,
