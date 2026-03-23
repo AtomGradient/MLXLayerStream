@@ -41,10 +41,8 @@ class BenchmarkViewModel: ObservableObject {
     @Published var modelLoaded = false
 
     private var container: ModelContainer?
-    private var streamingEngine: StreamingEngine?
     private var modelName: String = "unknown"
     private var loadTimeSeconds: Double = 0
-    private var isStreamingMode = false
 
     func loadModel() async {
         isRunning = true
@@ -72,18 +70,10 @@ class BenchmarkViewModel: ObservableObject {
         let loadStart = CFAbsoluteTimeGetCurrent()
 
         if isStreaming {
-            do {
-                let (model, numLayers) = try await StreamingEngine.createStreamingModel(directory: localModelURL)
-                streamingEngine = StreamingEngine(modelDir: localModelURL, numLayers: numLayers, model: model)
-                isStreamingMode = true
-                loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart
-                let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
-                status = "Streaming: \(modelName) (\(String(format: "%.0f", loadMemMB)) MB)"
-                modelLoaded = true
-            } catch {
-                status = "Stream load failed: \(error)"
-                saveError("Stream load failed: \(error)")
-            }
+            status = "Streaming not yet supported on device"
+            saveError("Streaming mode detected (streaming_info.json present) but not yet implemented on device")
+            isRunning = false
+            return
         } else {
             do {
                 container = try await LLMModelFactory.shared.loadContainer(
@@ -102,10 +92,6 @@ class BenchmarkViewModel: ObservableObject {
     }
 
     func runBenchmark() async {
-        if isStreamingMode {
-            await runStreamingBenchmark()
-            return
-        }
         guard let container else { return }
         isRunning = true
         results = []
@@ -158,54 +144,6 @@ class BenchmarkViewModel: ObservableObject {
         }
 
         status = "Complete!"
-        isRunning = false
-        saveResults()
-    }
-
-    private func runStreamingBenchmark() async {
-        guard let engine = streamingEngine else { return }
-        isRunning = true
-        results = []
-
-        status = "Streaming: cooling down..."
-        try? await Task.sleep(nanoseconds: kCooldownSeconds * 1_000_000_000)
-
-        // Simple streaming decode test
-        status = "Streaming: generating..."
-        GPU.clearCache()
-        GPU.resetPeakMemory()
-        engine.resetStats()
-
-        // Use a simple prompt encoded manually (avoid Tokenizer dependency)
-        // Encode "Hello" as token IDs for Qwen — just use a fixed prompt
-        let inputTokens: [Int32] = [9707]  // "Hello" in Qwen tokenizer
-        let inputIds = MLXArray(inputTokens).reshaped([1, 1])
-        let cache = engine.newCache()
-
-        let start = CFAbsoluteTimeGetCurrent()
-        var currentInput = inputIds
-
-        let maxTokens = 20  // Short test for streaming
-        for step in 0..<maxTokens {
-            let logits = engine.streamingStep(currentInput, cache: cache)
-            eval(logits)
-            let nextToken = MLX.argMax(logits[0..., (-1)..., 0...], axis: -1)
-            eval(nextToken)
-            currentInput = nextToken.reshaped([1, 1])
-            status = "Streaming: token \(step+1)/\(maxTokens)"
-        }
-
-        let elapsed = CFAbsoluteTimeGetCurrent() - start
-        let tps = Double(maxTokens) / elapsed
-        let peakMB = Double(GPU.peakMemory) / (1024 * 1024)
-
-        results.append(BenchmarkResult(
-            label: "Streaming", avgTPS: tps, promptTPS: 0,
-            allTPS: [tps], tokenCount: maxTokens,
-            peakMemoryMB: peakMB, loadTimeSeconds: loadTimeSeconds
-        ))
-
-        status = String(format: "Streaming: %.1f TPS, %.0f MB, I/O=%.1fs", tps, peakMB, engine.totalIOSeconds)
         isRunning = false
         saveResults()
     }
