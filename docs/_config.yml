@@ -1,0 +1,3 @@
+title: "Layer-Streaming Offloading for Edge LLM Inference"
+description: "Running 9B+ LLMs on 8GB devices via per-layer weight streaming on Apple Silicon"
+theme: null

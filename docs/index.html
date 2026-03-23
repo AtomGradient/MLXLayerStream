@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Layer-Streaming Offloading — AtomGradient</title>
+<style>
+:root{--bg:#faf9f7;--text:#191918;--text2:#6b6b6b;--card:#fff;--border:#e8e4df;--accent:#c96442;--tag-bg:#f0ece7;--max-w:900px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+.container{max-width:var(--max-w);margin:0 auto;padding:0 24px}
+nav{border-bottom:1px solid var(--border);padding:16px 0;position:sticky;top:0;background:var(--bg);z-index:10}
+nav .container{display:flex;justify-content:space-between;align-items:center}
+nav .brand{font-weight:700;font-size:0.95rem;color:var(--text)}
+nav .links{display:flex;gap:16px;align-items:center}
+nav a{color:var(--text2);text-decoration:none;font-size:0.85rem}
+nav a:hover{color:var(--accent)}
+.lang-btn{background:var(--tag-bg);border:none;padding:4px 12px;border-radius:12px;cursor:pointer;font-size:0.8rem}
+.lang-btn.active{background:var(--accent);color:#fff}
+html[lang="zh"] .e{display:none}
+html:not([lang="zh"]) .z{display:none}
+
+.hero{padding:80px 0 60px;text-align:center}
+.hero h1{font-size:2.2rem;line-height:1.3;margin-bottom:16px;font-weight:800}
+.hero p{font-size:1.1rem;color:var(--text2);max-width:700px;margin:0 auto 32px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:32px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:center}
+.stat .num{font-size:1.8rem;font-weight:800;color:var(--accent)}
+.stat .label{font-size:0.8rem;color:var(--text2);margin-top:4px}
+
+section{padding:48px 0}
+section h2{font-size:1.5rem;font-weight:700;margin-bottom:24px;padding-bottom:8px;border-bottom:2px solid var(--border)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px}
+.card h3{font-size:1.1rem;margin-bottom:8px}
+.card p{color:var(--text2);font-size:0.9rem}
+
+table{width:100%;border-collapse:collapse;font-size:0.85rem;margin:16px 0}
+th{background:var(--tag-bg);padding:10px 12px;text-align:left;font-weight:600;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px}
+td{padding:10px 12px;border-bottom:1px solid var(--border)}
+td:nth-child(n+3),th:nth-child(n+3){text-align:right}
+tr:hover td{background:#faf8f5}
+.highlight{background:#fef3ee;font-weight:600}
+.oom{color:#d32f2f;font-weight:700}
+
+.findings{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:600px){.findings,.stats{grid-template-columns:1fr}}
+
+footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--text2);font-size:0.85rem}
+footer a{color:var(--accent)}
+.wip{color:var(--accent);font-size:0.8rem;margin-top:8px}
+img.fig{width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 0}
+</style>
+</head>
+<body>
+
+<nav>
+<div class="container">
+<span class="brand">AtomGradient <span style="color:var(--text2);font-weight:400">&middot;</span> Layer-Streaming</span>
+<div class="links">
+<a href="#results"><span class="e">Results</span><span class="z">结果</span></a>
+<a href="#device"><span class="e">Devices</span><span class="z">设备</span></a>
+<a href="#streaming"><span class="e">Streaming</span><span class="z">流式</span></a>
+<a href="paper.pdf"><span class="e">Paper</span><span class="z">论文</span></a>
+<button class="lang-btn active" onclick="setLang('en')">EN</button>
+<button class="lang-btn" onclick="setLang('zh')">中文</button>
+</div>
+</div>
+</nav>
+
+<div class="hero">
+<div class="container">
+<h1>
+<span class="e">Layer-Streaming Offloading</span>
+<span class="z">按层流式卸载</span>
+</h1>
+<p>
+<span class="e">Running 9B+ language models on 8GB edge devices by streaming layer weights from NVMe storage during inference.</span>
+<span class="z">通过推理过程中从 NVMe 存储流式加载层权重，在 8GB 边缘设备上运行 9B+ 语言模型。</span>
+</p>
+<div class="stats">
+<div class="stat"><div class="num">88%</div><div class="label"><span class="e">Memory Reduction</span><span class="z">内存减少</span></div></div>
+<div class="stat"><div class="num">1.92x</div><div class="label"><span class="e">BW Scaling Verified</span><span class="z">带宽缩放验证</span></div></div>
+<div class="stat"><div class="num">9B</div><div class="label"><span class="e">OOM on 8GB iPad</span><span class="z">在 8GB iPad 上 OOM</span></div></div>
+<div class="stat"><div class="num">27B</div><div class="label"><span class="e">on 8GB (streaming)</span><span class="z">8GB 上可运行</span></div></div>
+</div>
+</div>
+</div>
+
+<section id="results">
+<div class="container">
+<h2><span class="e">Baseline Results — Mac Studio M2 Ultra</span><span class="z">基线结果 — Mac Studio M2 Ultra</span></h2>
+<table>
+<tr><th><span class="e">Model</span><span class="z">模型</span></th><th><span class="e">Quant</span><span class="z">量化</span></th><th>PPL</th><th>TPS</th><th><span class="e">Memory</span><span class="z">内存</span></th></tr>
+<tr><td>Qwen3.5-0.8B</td><td>8-bit</td><td>6.185</td><td>302.7</td><td>0.80 GB</td></tr>
+<tr><td>Qwen3.5-2B</td><td>6-bit</td><td>5.398</td><td>214.3</td><td>1.49 GB</td></tr>
+<tr><td>Qwen3.5-2B</td><td>8-bit</td><td>5.361</td><td>203.0</td><td>1.93 GB</td></tr>
+<tr><td>Qwen3.5-4B</td><td>4-bit</td><td>4.959</td><td>148.1</td><td>2.34 GB</td></tr>
+<tr><td>Qwen3.5-4B</td><td>6-bit</td><td>4.759</td><td>117.1</td><td>3.32 GB</td></tr>
+<tr><td>Qwen3.5-9B</td><td>6-bit</td><td>4.485</td><td>77.9</td><td>6.90 GB</td></tr>
+<tr class="highlight"><td>Qwen3.5-9B</td><td>8-bit</td><td>4.455</td><td>67.3</td><td>8.97 GB</td></tr>
+<tr class="highlight"><td>Qwen3.5-27B</td><td>4-bit</td><td>4.010</td><td>35.0</td><td>14.34 GB</td></tr>
+</table>
+<p style="font-size:0.8rem;color:var(--text2)">
+<span class="e">Highlighted rows exceed 8GB device memory and require layer-streaming.</span>
+<span class="z">高亮行超过 8GB 设备内存，需要层流式加载。</span>
+</p>
+</div>
+</section>
+
+<section id="device" style="background:var(--card)">
+<div class="container">
+<h2><span class="e">Real Device Measurements</span><span class="z">真实设备测量</span></h2>
+<div class="findings">
+<div class="card">
+<h3><span class="e">Bandwidth Scaling</span><span class="z">带宽缩放</span></h3>
+<p><span class="e">iPad/iPhone TPS ratio = <strong>1.90–1.93x</strong> across all models, matching the theoretical 2x memory bandwidth ratio (100 vs 50 GB/s).</span>
+<span class="z">所有模型的 iPad/iPhone TPS 比值 = <strong>1.90–1.93x</strong>，完美匹配理论带宽比 2x（100 vs 50 GB/s）。</span></p>
+</div>
+<div class="card">
+<h3><span class="e">9B OOM Proves Necessity</span><span class="z">9B OOM 证明必要性</span></h3>
+<p><span class="e">Qwen3.5-9B-6bit (6.9GB weights) crashes on 8GB iPad — iOS overhead leaves only ~5-6GB available. <strong>Streaming is essential for all 9B+ models.</strong></span>
+<span class="z">Qwen3.5-9B-6bit（6.9GB 权重）在 8GB iPad 上崩溃 — iOS 开销仅留 ~5-6GB 可用。<strong>所有 9B+ 模型都需要流式加载。</strong></span></p>
+</div>
+</div>
+
+<table>
+<tr><th><span class="e">Model</span><span class="z">模型</span></th><th><span class="e">Weights</span><span class="z">权重</span></th><th>iPad M3</th><th>iPhone A17</th><th><span class="e">Ratio</span><span class="z">比值</span></th></tr>
+<tr><td>0.8B-8bit</td><td>0.80 GB</td><td>103.2 TPS</td><td>53.5 TPS</td><td>1.93x</td></tr>
+<tr><td>2B-6bit</td><td>1.49 GB</td><td>56.8 TPS</td><td>—</td><td>—</td></tr>
+<tr><td>2B-8bit</td><td>1.93 GB</td><td>43.8 TPS</td><td>23.0 TPS</td><td>1.90x</td></tr>
+<tr><td>4B-4bit</td><td>2.34 GB</td><td>35.5 TPS</td><td>18.4 TPS</td><td>1.93x</td></tr>
+<tr><td>4B-6bit</td><td>3.32 GB</td><td>25.2 TPS</td><td>13.2 TPS</td><td>1.91x</td></tr>
+<tr class="highlight"><td>9B-6bit</td><td>6.90 GB</td><td class="oom">OOM</td><td>—</td><td>—</td></tr>
+</table>
+</div>
+</section>
+
+<section id="streaming">
+<div class="container">
+<h2><span class="e">Streaming: Memory vs TPS Tradeoff</span><span class="z">流式：内存 vs TPS 权衡</span></h2>
+
+<div class="findings">
+<div class="card">
+<h3><span class="e">Memory Savings</span><span class="z">内存节省</span></h3>
+<p><span class="e">27B-4bit: <strong>14.09 GB → 1.70 GB</strong> (88% reduction). 9B-8bit: 8.86 GB → 2.29 GB (74%). Both fit in 8GB with streaming.</span>
+<span class="z">27B-4bit: <strong>14.09 GB → 1.70 GB</strong>（减少 88%）。9B-8bit: 8.86 GB → 2.29 GB（74%）。两者通过流式均可在 8GB 设备运行。</span></p>
+</div>
+<div class="card">
+<h3><span class="e">I/O Bottleneck</span><span class="z">I/O 瓶颈</span></h3>
+<p><span class="e">Streaming is I/O-bound: compute/load ratio = <strong>1:1660</strong> on iPad. Layer strategy is irrelevant — only resident count matters.</span>
+<span class="z">流式是 I/O 瓶颈：计算/加载比 = <strong>1:1660</strong>（iPad）。层策略无关紧要 — 只有驻留数量重要。</span></p>
+</div>
+</div>
+
+<table>
+<tr><th><span class="e">Config</span><span class="z">配置</span></th><th><span class="e">Resident</span><span class="z">驻留</span></th><th>TPS</th><th><span class="e">Memory</span><span class="z">内存</span></th><th>I/O %</th></tr>
+<tr><td colspan="5" style="font-weight:600;background:var(--tag-bg)">Qwen3.5-9B-8bit (32 layers)</td></tr>
+<tr><td>Full Resident</td><td>32/32</td><td>68.3</td><td>8.97 GB</td><td>0%</td></tr>
+<tr><td>Stream 0%</td><td>0/32</td><td>1.7</td><td>2.31 GB</td><td>81%</td></tr>
+<tr><td>Hybrid 50%</td><td>16/32</td><td>3.2</td><td>5.73 GB</td><td>77%</td></tr>
+<tr><td>Hybrid 75%</td><td>24/32</td><td>5.9</td><td>7.44 GB</td><td>70%</td></tr>
+<tr><td colspan="5" style="font-weight:600;background:var(--tag-bg)">Qwen3.5-27B-4bit (64 layers)</td></tr>
+<tr><td>Full Resident</td><td>64/64</td><td>35.6</td><td>14.34 GB</td><td>0%</td></tr>
+<tr><td>Stream 0%</td><td>0/64</td><td>0.9</td><td>1.73 GB</td><td>80%</td></tr>
+<tr><td>Hybrid 25%</td><td>16/64</td><td>1.1</td><td>4.91 GB</td><td>80%</td></tr>
+<tr><td>Hybrid 50%</td><td>32/64</td><td>1.7</td><td>8.10 GB</td><td>77%</td></tr>
+</table>
+</div>
+</section>
+
+<footer>
+<div class="container">
+<p><strong>AtomGradient</strong> &middot;
+<span class="e">March 2026 &middot; Apple Silicon &middot; MLX</span>
+<span class="z">2026年3月 &middot; Apple Silicon &middot; MLX</span>
+</p>
+<p class="wip">
+<span class="e">&#9888; Work in Progress — This research is ongoing. Results and conclusions may be updated.</span>
+<span class="z">&#9888; 研究进行中 — 本研究尚未完成，结果和结论可能会更新。</span>
+</p>
+<p><a href="paper.pdf"><span class="e">Download Paper (PDF)</span><span class="z">下载论文 (PDF)</span></a>
+&middot; <a href="https://github.com/AtomGradient/MLXLayerStream">GitHub</a></p>
+</div>
+</footer>
+
+<script>
+function setLang(l){
+document.documentElement.lang=l==='zh'?'zh':'en';
+document.querySelectorAll('.lang-btn').forEach(b=>b.classList.remove('active'));
+event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
