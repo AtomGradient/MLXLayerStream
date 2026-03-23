@@ -41,8 +41,10 @@ class BenchmarkViewModel: ObservableObject {
     @Published var modelLoaded = false
 
     private var container: ModelContainer?
+    private var streamingEngine: StreamingEngine?
     private var modelName: String = "unknown"
     private var loadTimeSeconds: Double = 0
+    private var isStreamingMode = false
 
     func loadModel() async {
         isRunning = true
@@ -70,10 +72,49 @@ class BenchmarkViewModel: ObservableObject {
         let loadStart = CFAbsoluteTimeGetCurrent()
 
         if isStreaming {
-            status = "Streaming not yet supported on device"
-            saveError("Streaming mode detected (streaming_info.json present) but not yet implemented on device")
-            isRunning = false
-            return
+            do {
+                // Create temp dir with non_layer.safetensors → model.safetensors + configs
+                let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("s_\(UUID().uuidString)")
+                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                let fm = FileManager.default
+                for item in try fm.contentsOfDirectory(at: localModelURL, includingPropertiesForKeys: nil) {
+                    let name = item.lastPathComponent
+                    if name == "non_layer.safetensors" {
+                        try fm.createSymbolicLink(at: tempDir.appendingPathComponent("model.safetensors"), withDestinationURL: item)
+                    } else if name.hasSuffix(".json") && !name.hasPrefix("layer_") && name != "streaming_info.json" {
+                        try fm.createSymbolicLink(at: tempDir.appendingPathComponent(name), withDestinationURL: item)
+                    }
+                }
+
+                // Load model with only non-layer weights
+                let tempContainer = try await LLMModelFactory.shared.loadContainer(
+                    configuration: ModelConfiguration(directory: tempDir))
+                try? fm.removeItem(at: tempDir)
+
+                // Read streaming info
+                let infoData = try Data(contentsOf: localModelURL.appendingPathComponent("streaming_info.json"))
+                let info = try JSONSerialization.jsonObject(with: infoData) as! [String: Any]
+                let numLayers = info["num_layers"] as! Int
+
+                // Set up streaming engine via container.perform
+                let engine: StreamingEngine = try await tempContainer.perform { context in
+                    StreamingEngine(
+                        modelDir: localModelURL,
+                        numLayers: numLayers,
+                        model: context.model)
+                }
+                self.streamingEngine = engine
+                self.container = tempContainer
+
+                isStreamingMode = true
+                loadTimeSeconds = CFAbsoluteTimeGetCurrent() - loadStart
+                let loadMemMB = Double(GPU.peakMemory) / (1024 * 1024)
+                status = "Streaming: \(modelName) (\(String(format: "%.0f", loadMemMB)) MB)"
+                modelLoaded = true
+            } catch {
+                status = "Stream load: \(error)"
+                saveError("Stream load: \(error)")
+            }
         } else {
             do {
                 container = try await LLMModelFactory.shared.loadContainer(
@@ -92,6 +133,10 @@ class BenchmarkViewModel: ObservableObject {
     }
 
     func runBenchmark() async {
+        if isStreamingMode, let engine = streamingEngine {
+            await runStreamingBenchmark(engine)
+            return
+        }
         guard let container else { return }
         isRunning = true
         results = []
@@ -144,6 +189,47 @@ class BenchmarkViewModel: ObservableObject {
         }
 
         status = "Complete!"
+        isRunning = false
+        saveResults()
+    }
+
+    private func runStreamingBenchmark(_ engine: StreamingEngine) async {
+        isRunning = true
+        results = []
+
+        status = "Streaming: starting..."
+        GPU.clearCache()
+        GPU.resetPeakMemory()
+        engine.resetStats()
+
+        // Simple decode test
+        let inputTokens: [Int32] = [9707]  // "Hello" token
+        var currentInput = MLXArray(inputTokens).reshaped([1, 1])
+        let cache = engine.newCache()
+
+        let maxTokens = 10
+        let start = CFAbsoluteTimeGetCurrent()
+
+        for step in 0..<maxTokens {
+            status = "Streaming: token \(step+1)/\(maxTokens)..."
+            let logits = engine.streamingStep(currentInput, cache: cache)
+            eval(logits)
+            let nextToken = MLX.argMax(logits[0..., (-1)..., 0...], axis: -1)
+            eval(nextToken)
+            currentInput = nextToken.reshaped([1, 1])
+        }
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+        let tps = Double(maxTokens) / elapsed
+        let peakMB = Double(GPU.peakMemory) / (1024 * 1024)
+
+        results.append(BenchmarkResult(
+            label: "Streaming", avgTPS: tps, promptTPS: 0,
+            allTPS: [tps], tokenCount: maxTokens,
+            peakMemoryMB: peakMB, loadTimeSeconds: loadTimeSeconds
+        ))
+
+        status = String(format: "Streaming: %.2f TPS, %.0f MB, load=%.0fms/layer", tps, peakMB, engine.avgLoadMs)
         isRunning = false
         saveResults()
     }
